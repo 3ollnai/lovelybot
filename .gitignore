@@ -1,0 +1,24 @@
+# .gitignore pour projet Python
+
+# Fichier contenant les secrets (NE PAS VERSIONNER)
+.env
+
+# Environnement virtuel
+.venv/
+venv/
+
+# Fichiers Python compilés
+__pycache__/
+*.pyc
+
+# Dossiers de logs et cache
+*.log
+*.sqlite3
+
+# Dossiers d'IDE
+.vscode/
+.idea/
+
+# Autres fichiers inutiles
+.DS_Store
+Thumbs.db
