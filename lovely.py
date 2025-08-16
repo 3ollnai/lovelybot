@@ -1,11 +1,13 @@
 import discord
 from discord import app_commands
-from discord.ext import commands
-from discord.ui import View, Button
+from discord.ext import commands, tasks
+from discord.ui import View, Button, Select
 import json
 import os
 from dotenv import load_dotenv
 import re
+import asyncio
+import io
 import datetime
 
 load_dotenv()
@@ -68,6 +70,22 @@ def save_user_message(guild_id, user_id):
     data[str(user_id)].append(now)
     save_guild_data(guild_id, key, data)
 
+def parse_duration(duration_str):
+    pattern = r"(\d+)([smhd])"
+    match = re.fullmatch(pattern, duration_str.strip().lower())
+    if not match:
+        return None
+    value, unit = match.groups()
+    value = int(value)
+    if unit == 's':
+        return value
+    elif unit == 'm':
+        return value * 60
+    elif unit == 'h':
+        return value * 3600
+    elif unit == 'd':
+        return value * 86400
+    return None
 
 def get_logs_channel_id(guild_id):
     return load_guild_data(guild_id, "logs", None)
@@ -99,6 +117,22 @@ def extract_user_id(arg):
     if arg.startswith("<@") and arg.endswith(">"):
         arg = arg.replace("<@", "").replace(">", "").replace("!", "")
     return int(arg)
+
+# ----------- PERM1 OR HIGHER FUNCTION -----------
+
+def has_perm1_or_higher(message):
+    perms = get_permissions_roles(message.guild.id)
+    user_roles = [role.id for role in message.author.roles]
+    # Check perm1, perm2, perm3
+    for perm in ["perm1", "perm2", "perm3"]:
+        allowed_roles = perms.get(perm, [])
+        if any(role_id in allowed_roles for role_id in user_roles):
+            return True
+    # Check owner
+    owners = get_owners(message.guild.id)
+    if message.author.id == BOT_CREATOR_ID or message.author.id in owners:
+        return True
+    return False
 
 # ----------- INTERACTIVE LOG VIEW FOR DELETED MESSAGES -----------
 
@@ -176,14 +210,24 @@ async def on_ready():
     except Exception as e:
         print(f"Global sync failed: {e}")
 
+    # Démarre la task loop si elle n'est pas déjà lancée
+    if not shadowrealm_timer.is_running():
+        shadowrealm_timer.start()
+        print("Shadowrealm timer started.")
+
 @bot.event
 async def on_message(message):
     if message.author == bot.user or not message.guild:
         return
+
+    # Bad words filtering
     for word in BAD_WORDS:
         if word in message.content.lower():
             await message.delete()
-            await message.channel.send(f"{message.author.mention}, your message was deleted for inappropriate language.", delete_after=5)
+            await message.channel.send(
+                f"{message.author.mention}, your message was deleted for inappropriate language.",
+                delete_after=5
+            )
             await log_deleted_message_embed(
                 message.guild,
                 message.author,
@@ -193,9 +237,48 @@ async def on_message(message):
                 message_url=message.jump_url
             )
             return
-    save_user_message(message.guild.id, message.author.id)  # <--- AJOUT ICI
-    await bot.process_commands(message)
 
+    save_user_message(message.guild.id, message.author.id)
+
+    # Custom command handling
+    commands_data = load_guild_data(message.guild.id, "custom_commands", {})
+    prefix = "&"  # Adjust according to your bot
+
+    if message.content.startswith(prefix):
+        cmd = message.content[len(prefix):].split(" ")[0]
+        if cmd in commands_data:
+            # --- Only allow perm1 or higher for usage ---
+            if not has_perm1_or_higher(message):
+                await message.channel.send("You need perm1 or higher to use this command.", delete_after=5)
+                await message.delete()
+                return
+            content = commands_data[cmd]
+            # Handle user mentions
+            if "{mention}" in content and message.mentions:
+                mentions = " ".join(user.mention for user in message.mentions)
+                content = content.replace("{mention}", mentions)
+            # Handle role assignment (accept role name or ID)
+            if "{role:" in content:
+                pattern = r"\{role:([^\}]+)\}"
+                matches = re.findall(pattern, content)
+                for role_str in matches:
+                    role_str = role_str.strip()
+                    role = None
+                    if role_str.isdigit():
+                        role = message.guild.get_role(int(role_str))
+                    if not role:
+                        role = discord.utils.get(message.guild.roles, name=role_str)
+                    if role:
+                        for user in message.mentions:
+                            await user.add_roles(role)
+                        content = content.replace(f"{{role:{role_str}}}", "")
+                    else:
+                        content = content.replace(f"{{role:{role_str}}}", "")
+            await message.channel.send(content)
+            await message.delete()
+            return
+
+    await bot.process_commands(message)
 
 @bot.event
 async def on_message_delete(message):
@@ -1172,7 +1255,157 @@ async def del_perm(ctx, perm: str, role: discord.Role):
         author=ctx.author
     )
 
+
+@bot.command(name="createpermission", aliases=["createperm"])
+@commands.has_permissions(administrator=True)
+async def create_permission(ctx, perm_name: str, perm_description: str):
+    if perm_name in ["perm1", "perm2", "perm3"]:
+        await ctx.send("Permission name must not be perm1, perm2, or perm3.", delete_after=5)
+        await ctx.message.delete()
+        return
+
+    perms = get_permissions_roles(ctx.guild.id)
+    if perm_name in perms:
+        await ctx.send(f"The permission `{perm_name}` already exists.", delete_after=5)
+        await ctx.message.delete()
+        return
+
+    perms[perm_name] = []  # Initialize the new permission with an empty list of roles
+    save_permissions_roles(ctx.guild.id, perms)
+
+    # Optionally: save the description in a separate file
+    descs = load_guild_data(ctx.guild.id, "perm_descriptions", {})
+    descs[perm_name] = perm_description
+    save_guild_data(ctx.guild.id, "perm_descriptions", descs)
+
+    await ctx.message.delete()
+    await ctx.send(f"Permission `{perm_name}` created with description: {perm_description}.", delete_after=5)
+    await log_mod_action_embed(
+        ctx.guild,
+        title="✅ Permission Created",
+        fields=[
+            ("By", ctx.author.mention, True),
+            ("Permission Name", perm_name, True),
+            ("Description", perm_description, True)
+        ],
+        color=discord.Color.green(),
+        author=ctx.author
+    )
+
+
+#------------STATUS-----------#
+
+@bot.command(name="setstatus")
+@commands.has_permissions(administrator=True)
+async def set_status(ctx, status: str):
+    status_map = {
+        "online": discord.Status.online,
+        "idle": discord.Status.idle,
+        "dnd": discord.Status.dnd,
+        "offline": discord.Status.offline
+    }
+    status_lower = status.lower()
+    if status_lower not in status_map:
+        await ctx.send("Invalid status. Use 'online', 'idle', 'dnd', or 'offline'.", delete_after=5)
+        await ctx.message.delete()
+        return
+
+    await bot.change_presence(status=status_map[status_lower])
+    await ctx.message.delete()
+    await ctx.send(f"Bot status set to **{status_lower}**.", delete_after=5)
+    await log_mod_action_embed(
+        ctx.guild,
+        title="✅ Status Changed",
+        fields=[
+            ("By", ctx.author.mention, True),
+            ("Status", status_lower.capitalize(), True)
+        ],
+        color=discord.Color.green(),
+        author=ctx.author
+    )
+
+@bot.command(name="activity")
+@commands.has_permissions(administrator=True)
+async def set_activity(ctx, type: str, *, activity: str):
+    type_map = {
+        "playing": discord.ActivityType.playing,
+        "streaming": discord.ActivityType.streaming,
+        "listening": discord.ActivityType.listening,
+        "watching": discord.ActivityType.watching
+    }
+    type_lower = type.lower()
+    if type_lower not in type_map:
+        await ctx.send("Invalid activity type. Use 'playing', 'streaming', 'listening', or 'watching'.", delete_after=5)
+        await ctx.message.delete()
+        return
+
+    # Pour le type "streaming", il faut utiliser discord.Streaming (avec une URL)
+    if type_lower == "streaming":
+        # Par défaut, une URL factice (à adapter selon besoin)
+        url = "https://www.twitch.tv/d0llnai"
+        activity_obj = discord.Streaming(name=activity, url=url)
+    else:
+        activity_obj = discord.Activity(name=activity, type=type_map[type_lower])
+
+    await bot.change_presence(activity=activity_obj)
+    await ctx.message.delete()
+    await ctx.send(f"Bot activity set to **{type_lower}**: {activity}", delete_after=5)
+    await log_mod_action_embed(
+        ctx.guild,
+        title="✅ Activity Changed",
+        fields=[
+            ("By", ctx.author.mention, True),
+            ("Type", type_lower.capitalize(), True),
+            ("Activity", activity, True)
+        ],
+        color=discord.Color.green(),
+        author=ctx.author
+    )
+# ----------- SAY -----------
+@bot.command(name="say")
+async def say(ctx, *, message: str):
+    # Only perm2, perm3, or owner can use
+    if not (has_perm(ctx, "perm2") or has_perm(ctx, "perm3") or is_owner(ctx)):
+        await ctx.send("You don't have permission to use this command.", delete_after=5)
+        await ctx.message.delete()
+        return
+    await ctx.send(message)
+    await ctx.message.delete()
+
+
+ # ----------- CUSTOM COMMAND -----------
+@bot.command(name="custom")
+async def custom_command(ctx, command_name: str, *, command_content: str):
+    # Only owners can create custom commands
+    if not is_owner(ctx):
+        await ctx.send("Only owners can create custom commands.", delete_after=5)
+        await ctx.message.delete()
+        return
+    if command_name in ["help", "commands"]:
+        await ctx.send("Available commands: help, commands, custom, say")
+        await ctx.message.delete()
+        return
+    commands_data = load_guild_data(ctx.guild.id, "custom_commands", {})
+    commands_data[command_name] = command_content
+    save_guild_data(ctx.guild.id, "custom_commands", commands_data)
+    await ctx.send(f"Custom command `{command_name}` created with content: {command_content}.", delete_after=5)
+    await ctx.message.delete()
+
+@bot.command(name="customlist")
+async def custom_list(ctx):
+    commands_data = load_guild_data(ctx.guild.id, "custom_commands", {})
+    embed = discord.Embed(
+        title="Custom Commands",
+        description="List of custom commands:",
+        color=discord.Color.blue()
+    )
+    for name in commands_data.keys():
+        embed.add_field(name=name, value="\u200b", inline=False)  
+    await ctx.send(embed=embed)
+    await ctx.message.delete()
+
 # ----------- INFOS -----------
+
 
 @bot.command(name="userinfo")
 async def userinfo(ctx, member: discord.Member = None):
@@ -1279,7 +1512,69 @@ async def avatar(ctx, member: discord.Member = None):
     embed.set_image(url=member.avatar.url if hasattr(member, "avatar") and member.avatar else None)
     await ctx.send(embed=embed)
 
+# ----------- ShadowRealm-----------
+@bot.command(name="shadowrealm")
+async def shadowrealm(ctx, member: discord.Member, duration: str):
+    # Check if the command user is one of the owners
+    if not is_owner(ctx):
+        await ctx.send("Only owners can use this command.")
+        return
+
+    seconds = parse_duration(duration)
+    if seconds is None:
+        await ctx.send("Invalid duration format. Use formats like 10m, 1h, 30s, etc.")
+        return
+
+    role = ctx.guild.get_role(1209033095307726899)
+    if not role:
+        await ctx.send("Shadowrealm role was not found on this server.")
+        return
+
+    await member.add_roles(role)
+    await ctx.send(f"{member.mention} has been sent to the shadowrealm for {duration}.")
+
+    # Save to file for the timer loop, also save the channel ID to send the return message there
+    guild_id = ctx.guild.id
+    shadow_data = load_guild_data(guild_id, "shadowrealm", {})
+    shadow_data[str(member.id)] = {
+        "time": seconds,
+        "channel_id": ctx.channel.id
+    }
+    save_guild_data(guild_id, "shadowrealm", shadow_data)
+
+@tasks.loop(seconds=1)
+async def shadowrealm_timer():
+    for guild in bot.guilds:
+        guild_id = guild.id
+        shadow_data = load_guild_data(guild_id, "shadowrealm", {})
+        updated = False
+
+        role = guild.get_role(1209033095307726899)
+        if not role:
+            continue  # Skip this server if the role doesn't exist
+
+        for user_id in list(shadow_data.keys()):
+            shadow_data[user_id]["time"] -= 1
+            if shadow_data[user_id]["time"] <= 0:
+                member = guild.get_member(int(user_id))
+                channel_id = shadow_data[user_id].get("channel_id")
+                channel = guild.get_channel(channel_id) if channel_id else guild.system_channel
+
+                if member and role in member.roles:
+                    try:
+                        await member.remove_roles(role)
+                    except Exception:
+                        pass
+                    if channel:
+                        await channel.send(f"{member.mention} has returned from the shadowrealm!")
+                del shadow_data[user_id]
+                updated = True
+
+        if updated:
+            save_guild_data(guild_id, "shadowrealm", shadow_data)
+
 # ----------- HELP -----------
+
 
 @bot.command(name="help")
 async def help_command(ctx):
@@ -1288,9 +1583,9 @@ async def help_command(ctx):
     info_cmds = ["userinfo", "serverinfo", "avatar"] 
     logs_cmds = []
 
-    # MODÉRATION
+    # MODERATION
     if has_perm(ctx, "perm3") or is_owner(ctx):
-        moderation_cmds += ["ban","unban", "kick", "to", "unto", "clear", "addrole", "removerole", "createrole", "delrole"]
+        moderation_cmds += ["ban", "unban", "kick", "to", "unto", "clear", "addrole", "removerole", "createrole", "delrole"]
     elif has_perm(ctx, "perm2"):
         moderation_cmds += ["to", "unto", "clear", "addrole", "removerole", "createrole", "deleterole"]
     elif has_perm(ctx, "perm1"):
@@ -1303,6 +1598,10 @@ async def help_command(ctx):
     # LOGS
     if is_owner(ctx):
         logs_cmds += ["logs_mod"]
+
+    # CUSTOM COMMANDS
+    commands_data = load_guild_data(ctx.guild.id, "custom_commands", {})
+    custom_cmds = list(commands_data.keys())
 
     embed = discord.Embed(
         title="Bot Help",
@@ -1317,9 +1616,203 @@ async def help_command(ctx):
         embed.add_field(name="Info", value="`" + "`, `".join(info_cmds) + "`", inline=False)
     if logs_cmds:
         embed.add_field(name="Logs", value="`" + "`, `".join(logs_cmds) + "`", inline=False)
+    if custom_cmds:
+        embed.add_field(name="Custom", value="`" + "`, `".join(custom_cmds) + "`", inline=False)
 
     embed.set_footer(text="Slash commands also available!")
     await ctx.send(embed=embed)
+
+
+
+# ----------- TICKET SYSTEM (guild_data) -----------
+def get_ticket_data(guild_id):
+    return load_guild_data(guild_id, "tickets", {
+        "categories": [],
+        "staff_roles": {},
+        "counters": {},
+    })
+
+def save_ticket_data(guild_id, data):
+    save_guild_data(guild_id, "tickets", data)
+
+def get_ticket_logs_channel(guild):
+    logs_id = get_logs_channel_id(guild.id)
+    if logs_id:
+        return guild.get_channel(logs_id)
+    return None
+
+class TicketCloseView(View):
+    def __init__(self, opener: discord.Member, category: str, ticket_number: int):
+        super().__init__(timeout=None)
+        self.opener = opener
+        self.category = category
+        self.ticket_number = ticket_number
+
+    @discord.ui.button(label="Close Ticket", style=discord.ButtonStyle.red, emoji="🔒")
+    async def close(self, interaction: discord.Interaction, button: Button):
+        if interaction.user != self.opener and not interaction.user.guild_permissions.manage_channels:
+            await interaction.response.send_message("Only the ticket author or staff can close this ticket.", ephemeral=True)
+            return
+
+        await interaction.response.send_message("Closing ticket...", ephemeral=True)
+
+        # DM to user (embed only)
+        dm_embed = discord.Embed(
+            title=f"Your Ticket Closed: {self.category} #{self.ticket_number}",
+            description="Your ticket has been closed. Thank you for contacting us!",
+            color=discord.Color.blurple()
+        )
+        try:
+            await self.opener.send(embed=dm_embed)
+        except Exception:
+            pass
+
+        # Log channel for staff (embed only)
+        staff_log_channel = get_ticket_logs_channel(interaction.guild)
+        if staff_log_channel:
+            log_embed = discord.Embed(
+                title=f"Ticket Closed: {self.category} #{self.ticket_number}",
+                description=f"Closed by {interaction.user.mention}\nTicket author: {self.opener.mention}",
+                color=discord.Color.red()
+            )
+            await staff_log_channel.send(embed=log_embed)
+
+        await interaction.channel.delete()
+
+class TicketCategorySelect(Select):
+    def __init__(self, guild_id):
+        self.guild_id = guild_id
+        ticket_data = get_ticket_data(guild_id)
+        categories = ticket_data["categories"]
+        options = [
+            discord.SelectOption(
+                label=cat,
+                description=f"Open a ticket for {cat}",
+                emoji="🎫"
+            ) for cat in categories
+        ]
+        super().__init__(
+            placeholder="Choose your ticket category...",
+            min_values=1,
+            max_values=1,
+            options=options
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        category_name = self.values[0]
+        guild = interaction.guild
+        opener = interaction.user
+
+        ticket_data = get_ticket_data(guild.id)
+        counters = ticket_data.get("counters", {})
+        ticket_number = counters.get(category_name, 1)
+        counters[category_name] = ticket_number + 1
+        ticket_data["counters"] = counters
+        save_ticket_data(guild.id, ticket_data)
+
+        ticket_channel_name = f"{category_name.lower().replace(' ', '-')}-{ticket_number}"
+
+        parent_category_id = 1340351234863009953
+        parent_category = guild.get_channel(parent_category_id)
+        if not parent_category or not isinstance(parent_category, discord.CategoryChannel):
+            await interaction.response.send_message(
+                "The ticket category does not exist or is not a category. Please contact an admin.",
+                ephemeral=True
+            )
+            return
+
+        overwrites = {
+            guild.default_role: discord.PermissionOverwrite(view_channel=False),
+            opener: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
+        }
+
+        staff_roles_dict = ticket_data.get("staff_roles", {})
+        staff_role_ids = staff_roles_dict.get(category_name, [])
+        if isinstance(staff_role_ids, int):
+            staff_role_ids = [staff_role_ids]
+        elif not isinstance(staff_role_ids, list):
+            staff_role_ids = []
+
+        for staff_role_id in staff_role_ids:
+            staff_role = guild.get_role(staff_role_id)
+            if staff_role:
+                overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
+
+        ticket_channel = await guild.create_text_channel(
+            name=ticket_channel_name,
+            category=parent_category,
+            overwrites=overwrites,
+            reason=f"Ticket {category_name} opened by {opener} (#{ticket_number})"
+        )
+
+        embed = discord.Embed(
+            title=f"🎫 Ticket {category_name}",
+            description=(
+                f"Hello {opener.mention}, your **{category_name}** ticket is now open!\n"
+                "A staff member will assist you soon.\n\n"
+                "Use the button below to close this ticket."
+            ),
+            color=discord.Color.green()
+        )
+        await ticket_channel.send(embed=embed, view=TicketCloseView(opener, category_name, ticket_number))
+
+        await interaction.response.send_message(
+            f"Your ticket has been created: {ticket_channel.mention}", ephemeral=True
+        )
+
+class TicketPanelView(View):
+    def __init__(self, guild_id):
+        super().__init__(timeout=None)
+        self.add_item(TicketCategorySelect(guild_id))
+
+@bot.command(name="ticketpanel")
+@commands.has_permissions(administrator=True)
+async def ticketpanel(ctx, categories: str, *, roles_str: str):
+    """
+    Usage: &ticketpanel "Support|Report|Partnership" @Support1 @Support2 ; @Report1 ; @Partnership1 @Partnership2
+    """
+    cats = [cat.strip() for cat in categories.split("|") if cat.strip()]
+    roles_per_cat = [block.strip() for block in roles_str.split(";")]
+
+    if len(cats) != len(roles_per_cat):
+        await ctx.send("You must provide staff roles for each category, separated by ';'.", delete_after=10)
+        return
+
+    staff_roles = {}
+    for cat, role_block in zip(cats, roles_per_cat):
+        roles = []
+        for role_mention in role_block.split():
+            if role_mention.startswith("<@&"):
+                role_id = int(role_mention[3:-1])
+                role = ctx.guild.get_role(role_id)
+                if role:
+                    roles.append(role.id)
+        staff_roles[cat] = roles
+
+    ticket_data = get_ticket_data(ctx.guild.id)
+    ticket_data["categories"] = cats
+    ticket_data["staff_roles"] = staff_roles
+    if "counters" not in ticket_data:
+        ticket_data["counters"] = {}
+    for cat in cats:
+        if cat not in ticket_data["counters"]:
+            ticket_data["counters"][cat] = 1
+    save_ticket_data(ctx.guild.id, ticket_data)
+
+    embed = discord.Embed(
+        title="🎟️ Open a Ticket",
+        description="Click the menu below and select the category of your request.\nA private channel will be created for you.",
+        color=discord.Color.blurple()
+    )
+
+    target_channel_id = 1340355613963587690
+    target_channel = ctx.guild.get_channel(target_channel_id)
+    if not target_channel:
+        await ctx.send("The ticket panel channel could not be found.", delete_after=10)
+        return
+
+    await target_channel.send(embed=embed, view=TicketPanelView(ctx.guild.id))
+    await ctx.send(f"Panel successfully created/updated in {target_channel.mention}!", delete_after=10)
 
 
 # ----------- LANCEMENT DU BOT ---------
