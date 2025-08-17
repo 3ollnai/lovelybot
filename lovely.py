@@ -1666,7 +1666,7 @@ async def help_command(ctx):
 
 
 # ----------- TICKET SYSTEM (guild_data) -----------
-# --- Utility functions for panel management ---
+
 def get_panel_data(guild_id):
     return load_guild_data(guild_id, "panels", [])
 
@@ -1686,7 +1686,7 @@ class PanelCategorySelect(Select):
         options = [
             SelectOption(label=cat.name, value=str(cat.id))
             for cat in guild.channels if isinstance(cat, discord.CategoryChannel)
-        ]
+        ][:25]  # Limite Discord
         super().__init__(
             placeholder="Select the category where tickets will be created...",
             min_values=1, max_values=1, options=options
@@ -1699,8 +1699,16 @@ class PanelCategorySelect(Select):
         )
         await interaction.followup.send(
             "Select staff roles allowed to view tickets:",
-            view=PanelRoleSelectView(interaction.guild, self.view.panel_info, self.view.selected_category_id)
+            view=PanelRoleSelectView(interaction.guild, self.view.panel_info, self.view.selected_category_id),
+            ephemeral=True
         )
+
+class PanelCategorySelectView(View):
+    def __init__(self, guild: discord.Guild, panel_info: dict):
+        super().__init__(timeout=120)
+        self.add_item(PanelCategorySelect(guild))
+        self.panel_info = panel_info
+        self.selected_category_id = None
 
 # --- Staff role selector ---
 class PanelRoleSelect(Select):
@@ -1708,7 +1716,7 @@ class PanelRoleSelect(Select):
         options = [
             SelectOption(label=role.name, value=str(role.id))
             for role in guild.roles if not role.is_default()
-        ]
+        ][:25]  # Limite Discord
         super().__init__(
             placeholder="Select staff roles...", min_values=1, max_values=len(options), options=options
         )
@@ -1717,7 +1725,12 @@ class PanelRoleSelect(Select):
         await interaction.response.send_message(
             "Where should the panel be posted? Select the text channel.",
             ephemeral=True,
-            view=PanelTargetChannelSelectView(interaction.guild, self.view.panel_info, self.view.selected_category_id, self.view.selected_role_ids)
+            view=PanelTargetChannelSelectView(
+                interaction.guild,
+                self.view.panel_info,
+                self.view.selected_category_id,
+                self.view.selected_role_ids
+            )
         )
 
 class PanelRoleSelectView(View):
@@ -1734,7 +1747,7 @@ class PanelTargetChannelSelect(Select):
         options = [
             SelectOption(label=ch.name, value=str(ch.id))
             for ch in guild.text_channels
-        ]
+        ][:25]  # Limite Discord
         super().__init__(
             placeholder="Select the channel for the ticket panel...", min_values=1, max_values=1, options=options
         )
@@ -1838,7 +1851,8 @@ class UserTicketPanelView(View):
                 "A staff member will respond as soon as possible.\n\n"
                 "Use the button below to close this ticket."
             ),
-            color=discord.Color.green()
+            color=discord.Color.green(),
+            timestamp=datetime.datetime.now(datetime.timezone.utc)
         )
         await ticket_channel.send(embed=embed, view=TicketCloseView())
 
@@ -1886,13 +1900,6 @@ class TicketPanelSetupView(View):
             "Panel editing is not implemented yet.", ephemeral=True
         )
 
-class PanelCategorySelectView(View):
-    def __init__(self, guild: discord.Guild, panel_info: dict):
-        super().__init__(timeout=120)
-        self.add_item(PanelCategorySelect(guild))
-        self.panel_info = panel_info
-        self.selected_category_id = None
-
 # --- Main command ---
 @bot.command(name="ticketpanel")
 @commands.has_permissions(administrator=True)
@@ -1903,6 +1910,7 @@ async def ticketpanel(ctx):
         color=discord.Color.blurple()
     )
     await ctx.send(embed=embed, view=TicketPanelSetupView(ctx))
+
 
 # ----------- LANCEMENT DU BOT ---------
 
