@@ -190,7 +190,7 @@ async def log_deleted_message_embed(guild, author, content, channel, reason=None
     embed.set_footer(text=f"User ID: {author.id}")
     view = DeletedMessageView(content)
     await logs_channel.send(embed=embed, view=view)
-    
+
 # ----------- EVENTS -----------
 
 @bot.event
@@ -1907,7 +1907,7 @@ async def setup_persistent_ticket_views():
                     and message.embeds[0].description == panel['description']
                 ):
                     try:
-                        await bot.add_view(UserTicketPanelView(panel), message_id=message.id)
+                        bot.add_view(UserTicketPanelView(panel), message_id=message.id)
                         print(f"Persistent view re-added in {channel} for panel {panel['name']}")
                     except Exception as e:
                         print(f"Error adding persistent view: {e}")
