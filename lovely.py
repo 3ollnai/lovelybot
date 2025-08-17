@@ -118,23 +118,17 @@ def extract_user_id(arg):
         arg = arg.replace("<@", "").replace(">", "").replace("!", "")
     return int(arg)
 
-# ----------- PERM1 OR HIGHER FUNCTION -----------
-
 def has_perm1_or_higher(message):
     perms = get_permissions_roles(message.guild.id)
     user_roles = [role.id for role in message.author.roles]
-    # Check perm1, perm2, perm3
     for perm in ["perm1", "perm2", "perm3"]:
         allowed_roles = perms.get(perm, [])
         if any(role_id in allowed_roles for role_id in user_roles):
             return True
-    # Check owner
     owners = get_owners(message.guild.id)
     if message.author.id == BOT_CREATOR_ID or message.author.id in owners:
         return True
     return False
-
-# ----------- INTERACTIVE LOG VIEW FOR DELETED MESSAGES -----------
 
 class DeletedMessageView(View):
     def __init__(self, message_content):
@@ -154,8 +148,6 @@ class DeletedMessageView(View):
             "Log deleted.", ephemeral=True
         )
         await interaction.message.delete()
-
-# ----------- EMBED LOGS -----------
 
 async def log_mod_action_embed(guild, title, fields, color=discord.Color.blue(), author=None):
     channel_id = get_logs_channel_id(guild.id)
@@ -198,7 +190,7 @@ async def log_deleted_message_embed(guild, author, content, channel, reason=None
     embed.set_footer(text=f"User ID: {author.id}")
     view = DeletedMessageView(content)
     await logs_channel.send(embed=embed, view=view)
-
+    
 # ----------- EVENTS -----------
 
 @bot.event
@@ -209,6 +201,9 @@ async def on_ready():
         print(f"Global sync: {len(synced)} slash commands.")
     except Exception as e:
         print(f"Global sync failed: {e}")
+
+    # Ajoute views persistantes pour les panels tickets
+    await setup_persistent_ticket_views()
 
     # Démarre la task loop si elle n'est pas déjà lancée
     if not shadowrealm_timer.is_running():
@@ -1667,7 +1662,6 @@ async def help_command(ctx):
 
 # ----------- TICKET SYSTEM (guild_data) -----------
 
-# ----------- TICKET SYSTEM (guild_data) -----------
 
 def get_panel_data(guild_id):
     return load_guild_data(guild_id, "panels", [])
@@ -1675,7 +1669,6 @@ def get_panel_data(guild_id):
 def save_panel_data(guild_id, panels):
     save_guild_data(guild_id, "panels", panels)
 
-# --- Modal for panel name/description ---
 class PanelSetupModal(Modal):
     def __init__(self, callback):
         super().__init__(title="Create Ticket Panel")
@@ -1692,13 +1685,12 @@ class PanelSetupModal(Modal):
         }
         await self.callback_func(interaction, panel_info)
 
-# --- Category selector ---
 class PanelCategorySelect(Select):
     def __init__(self, guild: discord.Guild):
         options = [
             SelectOption(label=cat.name, value=str(cat.id))
             for cat in guild.channels if isinstance(cat, discord.CategoryChannel)
-        ][:25]  # Limite Discord
+        ][:25]
         super().__init__(
             placeholder="Select the category where tickets will be created...",
             min_values=1, max_values=1, options=options
@@ -1722,13 +1714,12 @@ class PanelCategorySelectView(View):
         self.panel_info = panel_info
         self.selected_category_id = None
 
-# --- Staff role selector ---
 class PanelRoleSelect(Select):
     def __init__(self, guild: discord.Guild):
         options = [
             SelectOption(label=role.name, value=str(role.id))
             for role in guild.roles if not role.is_default()
-        ][:25]  # Limite Discord
+        ][:25]
         super().__init__(
             placeholder="Select staff roles...", min_values=1, max_values=len(options), options=options
         )
@@ -1753,29 +1744,25 @@ class PanelRoleSelectView(View):
         self.selected_category_id = selected_category_id
         self.selected_role_ids = []
 
-# --- Selector for the channel to post the panel ---
 class PanelTargetChannelSelect(Select):
     def __init__(self, guild: discord.Guild):
         options = [
             SelectOption(label=ch.name, value=str(ch.id))
             for ch in guild.text_channels
-        ][:25]  # Limite Discord
+        ][:25]
         super().__init__(
             placeholder="Select the channel for the ticket panel...", min_values=1, max_values=1, options=options
         )
     async def callback(self, interaction: discord.Interaction):
         self.view.target_channel_id = int(self.values[0])
-        # Gather panel info
         panel_info = self.view.panel_info
         panel_info['category_id'] = self.view.selected_category_id
         panel_info['staff_role_ids'] = self.view.selected_role_ids
         panel_info['target_channel_id'] = self.view.target_channel_id
-        # Save to guild data
         guild_id = interaction.guild.id
         panels = get_panel_data(guild_id)
         panels.append(panel_info)
         save_panel_data(guild_id, panels)
-        # Post the panel in the selected channel
         target_channel = interaction.guild.get_channel(self.view.target_channel_id)
         if target_channel:
             embed = discord.Embed(
@@ -1783,7 +1770,8 @@ class PanelTargetChannelSelect(Select):
                 description=panel_info['description'],
                 color=discord.Color.blurple()
             )
-            await target_channel.send(embed=embed, view=UserTicketPanelView(panel_info))
+            message = await target_channel.send(embed=embed, view=UserTicketPanelView(panel_info))
+            await bot.add_view(UserTicketPanelView(panel_info), message_id=message.id)
         await interaction.response.send_message(
             f"Panel **{panel_info['name']}** created and posted in <#{panel_info['target_channel_id']}>!",
             ephemeral=True
@@ -1798,36 +1786,27 @@ class PanelTargetChannelSelectView(View):
         self.selected_role_ids = selected_role_ids
         self.target_channel_id = None
 
-# --- View for users to open tickets ---
 class UserTicketPanelView(View):
     def __init__(self, panel_info: dict):
         super().__init__(timeout=None)
         self.panel_info = panel_info
 
-    @discord.ui.button(label="Open a Ticket", style=discord.ButtonStyle.green, emoji="🎫")
+    @discord.ui.button(label="Open a Ticket", style=discord.ButtonStyle.green, emoji="🎫", custom_id="open_ticket_btn")
     async def open_ticket(self, interaction: discord.Interaction, button: Button):
         guild = interaction.guild
         opener = interaction.user
-
-        # Get panels and the index of the current panel
         guild_id = guild.id
         panels = get_panel_data(guild_id)
         panel_idx = next((i for i, p in enumerate(panels) if p['name'] == self.panel_info['name']), None)
         if panel_idx is None:
             await interaction.response.send_message("Panel not found.", ephemeral=True)
             return
-
-        # Ticket counter per panel
         if "counter" not in panels[panel_idx]:
             panels[panel_idx]["counter"] = 1
         ticket_number = panels[panel_idx]["counter"]
         panels[panel_idx]["counter"] += 1
         save_panel_data(guild_id, panels)
-
-        # Ticket channel name
         ticket_channel_name = f"{self.panel_info['name'].lower().replace(' ', '-')}-{ticket_number}"
-
-        # Get category
         category_id = self.panel_info['category_id']
         parent_category = guild.get_channel(category_id)
         if not parent_category or not isinstance(parent_category, discord.CategoryChannel):
@@ -1836,8 +1815,6 @@ class UserTicketPanelView(View):
                 ephemeral=True
             )
             return
-
-        # Permissions
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
             opener: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
@@ -1846,16 +1823,12 @@ class UserTicketPanelView(View):
             staff_role = guild.get_role(staff_role_id)
             if staff_role:
                 overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
-
-        # Create the channel
         ticket_channel = await guild.create_text_channel(
             name=ticket_channel_name,
             category=parent_category,
             overwrites=overwrites,
             reason=f"Ticket {self.panel_info['name']} opened by {opener} (#{ticket_number})"
         )
-
-        # Welcome embed
         embed = discord.Embed(
             title=f"🎫 Ticket {self.panel_info['name']}",
             description=(
@@ -1867,12 +1840,10 @@ class UserTicketPanelView(View):
             timestamp=datetime.datetime.now(datetime.timezone.utc)
         )
         await ticket_channel.send(embed=embed, view=TicketCloseView())
-
         await interaction.response.send_message(
             f"Your ticket has been created: {ticket_channel.mention}", ephemeral=True
         )
 
-# --- View to close the ticket ---
 class TicketCloseView(View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -1885,7 +1856,6 @@ class TicketCloseView(View):
         )
         await channel.delete(reason="Ticket closed via button.")
 
-# --- Initial setup view ---
 class TicketPanelSetupView(View):
     def __init__(self, ctx):
         super().__init__(timeout=120)
@@ -1893,7 +1863,6 @@ class TicketPanelSetupView(View):
 
     @discord.ui.button(label="Create new ticket panel", style=discord.ButtonStyle.green)
     async def create_panel(self, interaction: discord.Interaction, button: Button):
-        # Correction : on passe une callback au modal
         modal = PanelSetupModal(self.panel_modal_callback)
         await interaction.response.send_modal(modal)
 
@@ -1910,7 +1879,6 @@ class TicketPanelSetupView(View):
             "Panel editing is not implemented yet.", ephemeral=True
         )
 
-# --- Main command ---
 @bot.command(name="ticketpanel")
 @commands.has_permissions(administrator=True)
 async def ticketpanel(ctx):
@@ -1921,6 +1889,29 @@ async def ticketpanel(ctx):
     )
     await ctx.send(embed=embed, view=TicketPanelSetupView(ctx))
 
+async def setup_persistent_ticket_views():
+    for guild in bot.guilds:
+        panels = get_panel_data(guild.id)
+        for panel in panels:
+            channel_id = panel.get("target_channel_id")
+            if not channel_id:
+                continue
+            channel = guild.get_channel(channel_id)
+            if not channel:
+                continue
+            async for message in channel.history(limit=50):
+                if (
+                    message.author == bot.user
+                    and message.embeds
+                    and message.embeds[0].title == f"🎟️ {panel['name']}"
+                    and message.embeds[0].description == panel['description']
+                ):
+                    try:
+                        await bot.add_view(UserTicketPanelView(panel), message_id=message.id)
+                        print(f"Persistent view re-added in {channel} for panel {panel['name']}")
+                    except Exception as e:
+                        print(f"Error adding persistent view: {e}")
+                    break
 
 
 # ----------- LANCEMENT DU BOT ---------
