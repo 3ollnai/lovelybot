@@ -2066,19 +2066,19 @@ def is_owner():
 @bot.command(name="removebot")
 @is_owner()  # Restrict this command to the bot creator
 async def leave_server(ctx, server_id: int):
-    # Tente de récupérer le serveur à partir de l'ID fourni
+    # Attempt to retrieve the guild (server) from the provided ID
     guild = bot.get_guild(server_id)
     
     if guild is None:
-        await ctx.send("Le serveur avec cet ID n'a pas été trouvé.")
+        await ctx.send("The server with this ID was not found.")
         return
     
-    # Vérifie si le bot est dans le serveur
+    # Check if the bot is in the server
     if guild.me not in guild.members:
-        await ctx.send("Le bot n'est pas dans ce serveur.")
+        await ctx.send("The bot is not a member of this server.")
         return
 
-    await ctx.send(f"Le bot quitte le serveur : {guild.name}.")
+    await ctx.send(f"The bot is leaving the server: {guild.name}.")
     await guild.leave()
 
 # ----------- LANCEMENT DU BOT ---------
