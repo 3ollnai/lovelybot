@@ -25,6 +25,8 @@ if not os.path.exists(DATA_FOLDER):
 
 BOT_CREATOR_ID = 889652253227622471
 
+
+
 def get_guild_file(guild_id, key):
     return os.path.join(DATA_FOLDER, f"{guild_id}_{key}.json")
 
@@ -37,6 +39,40 @@ def load_guild_data(guild_id, key, default):
         except Exception:
             return default
     return default
+
+def get_deleted_logs_file(guild_id):
+    return os.path.join(DATA_FOLDER, f"{guild_id}_deleted_logs.json")
+
+def save_deleted_log_content(guild_id, message_id, content):
+    file_path = get_deleted_logs_file(guild_id)
+    if os.path.exists(file_path):
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    else:
+        data = {}
+    data[str(message_id)] = content
+    with open(file_path, "w", encoding="utf-8") as f:
+        json.dump(data, f)
+
+def load_deleted_log_content(guild_id, message_id):
+    file_path = get_deleted_logs_file(guild_id)
+    if not os.path.exists(file_path):
+        return "Message unavailable"
+    with open(file_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    return data.get(str(message_id), "Message unavailable")
+
+def delete_deleted_log_content(guild_id, message_id):
+    file_path = get_deleted_logs_file(guild_id)
+    if not os.path.exists(file_path):
+        return
+    with open(file_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    if str(message_id) in data:
+        del data[str(message_id)]
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+
 
 def save_guild_data(guild_id, key, data):
     path = get_guild_file(guild_id, key)
@@ -131,9 +167,10 @@ def has_perm1_or_higher(message):
     return False
 
 class DeletedMessageView(View):
-    def __init__(self, message_content):
+    def __init__(self, message_content, guild_id):
         super().__init__(timeout=None)
         self.message_content = message_content
+        self.guild_id = guild_id
 
     @discord.ui.button(label="Restore", style=discord.ButtonStyle.green, emoji="🔄", custom_id="restore_msg_btn")
     async def restore(self, interaction: discord.Interaction, button: Button):
@@ -141,15 +178,15 @@ class DeletedMessageView(View):
             f"Restored message:\n```{self.message_content}```",
             ephemeral=True
         )
-        await log_ticket_action(interaction.guild, "Restored Message", interaction.user)
 
     @discord.ui.button(label="Delete log", style=discord.ButtonStyle.red, emoji="🗑️", custom_id="delete_log_btn")
     async def delete_permanently(self, interaction: discord.Interaction, button: Button):
         await interaction.response.send_message(
             "Log deleted.", ephemeral=True
         )
+        delete_deleted_log_content(self.guild_id, interaction.message.id)
         await interaction.message.delete()
-        await log_ticket_action(interaction.guild, "Deleted Log", interaction.user)
+
 
 async def log_ticket_action(guild, action, user, ticket_channel=None):
     channel_id = get_logs_channel_id(guild.id)
@@ -209,12 +246,14 @@ async def log_deleted_message_embed(guild, author, content, channel, reason=None
     if message_url:
         embed.add_field(name="Jump to message", value=f"[Click here]({message_url})", inline=False)
     embed.set_footer(text=f"User ID: {author.id}")
-    view = DeletedMessageView(content)
+    view = DeletedMessageView(content, guild.id)
     msg = await logs_channel.send(embed=embed, view=view)
-    bot.add_view(DeletedMessageView(content), message_id=msg.id)
+    save_deleted_log_content(guild.id, msg.id, content)
+    bot.add_view(DeletedMessageView(content, guild.id), message_id=msg.id)
+
+    
 # ----------- EVENTS -----------
 
-@bot.event
 @bot.event
 async def on_ready():
     print(f"{bot.user} is online!")
@@ -1909,8 +1948,6 @@ async def ticketpanel(ctx):
     )
     await ctx.send(embed=embed, view=TicketPanelSetupView(ctx))
 
-
-
 async def setup_persistent_views():
     for guild in bot.guilds:
         # Ticket panels
@@ -1935,7 +1972,8 @@ async def setup_persistent_views():
                     except Exception as e:
                         print(f"Error adding persistent ticket view: {e}")
                     break
-        # Log messages with buttons
+
+        # Log messages with buttons (SUPPRIMÉS)
         logs_channel_id = get_logs_channel_id(guild.id)
         if logs_channel_id:
             logs_channel = guild.get_channel(logs_channel_id)
@@ -1947,7 +1985,9 @@ async def setup_persistent_views():
                         and message.components
                     ):
                         try:
-                            bot.add_view(DeletedMessageView("Message unavailable"), message_id=message.id)
+                            # Charge le contenu supprimé spécifique à ce serveur et ce message
+                            content = load_deleted_log_content(guild.id, message.id)
+                            bot.add_view(DeletedMessageView(content, guild.id), message_id=message.id)
                         except Exception as e:
                             print(f"Error adding persistent log view: {e}")
 
