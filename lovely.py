@@ -1723,33 +1723,37 @@ async def help_command(ctx):
     management_cmds = []
     info_cmds = ["userinfo", "serverinfo", "avatar"]
     logs_cmds = []
-    ticket_cmds = ["ticketpanel"]  # Add ticketpanel command to the help
+    ticket_cmds = []  # Initialiser la liste des commandes de ticket
 
-    # Automatically add the server owner to the owners list
+    # Automatiquement ajouter le propriétaire du serveur à la liste des propriétaires
     owners = get_owners(ctx.guild.id)
     if ctx.guild.owner.id not in owners:
         owners.add(ctx.guild.owner.id)
         save_owners(ctx.guild.id, owners)
 
-    # MODERATION
-    if has_perm(ctx, "perm3") or is_owner(ctx):  # Keep is_owner for moderation
+    # MODÉRATION
+    if has_perm(ctx, "perm3") or is_owner(ctx):  # Garder is_owner pour la modération
         moderation_cmds += ["ban", "unban", "kick", "to", "unto", "clear", "addrole", "removerole", "createrole", "deleterole"]
     elif has_perm(ctx, "perm2"):
         moderation_cmds += ["to", "unto", "clear", "addrole", "removerole", "createrole", "deleterole"]
     elif has_perm(ctx, "perm1"):
         moderation_cmds += ["to", "unto"]
 
-    # MANAGEMENT
-    if is_owner(ctx):  # Keep is_owner for management commands
+    # GESTION
+    if is_owner(ctx):  # Garder is_owner pour les commandes de gestion
         management_cmds += ["bl", "unbl", "showbl", "addowner", "delowner", "addperm", "delperm"]
 
     # LOGS
-    if is_owner(ctx):  # Keep is_owner for logs commands
+    if is_owner(ctx):  # Garder is_owner pour les commandes de logs
         logs_cmds += ["logs_mod"]
 
-    # CUSTOM COMMANDS
+    # COMMANDES PERSONNALISÉES
     commands_data = load_guild_data(ctx.guild.id, "custom_commands", {})
     custom_cmds = list(commands_data.keys())
+
+    # Ajouter ticket_cmds uniquement pour les propriétaires
+    if is_owner(ctx):
+        ticket_cmds = ["ticketpanel"]  # Ajouter la commande ticketpanel
 
     embed = discord.Embed(
         title="Bot Help",
@@ -1764,7 +1768,7 @@ async def help_command(ctx):
         embed.add_field(name="Info", value="`" + "`, `".join(info_cmds) + "`", inline=False)
     if logs_cmds:
         embed.add_field(name="Logs", value="`" + "`, `".join(logs_cmds) + "`", inline=False)
-    if ticket_cmds:  # Add ticket commands section
+    if ticket_cmds:  # Ajouter la section des commandes de ticket uniquement pour les propriétaires
         embed.add_field(name="Ticket Commands", value="`" + "`, `".join(ticket_cmds) + "`", inline=False)
     if custom_cmds:
         embed.add_field(name="Custom", value="`" + "`, `".join(custom_cmds) + "`", inline=False)
