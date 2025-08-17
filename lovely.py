@@ -549,7 +549,7 @@ async def logs_mod_slash(interaction: discord.Interaction, channel: discord.Text
 @bot.command(name="ban")
 @commands.has_permissions(ban_members=True)
 async def ban_normal(ctx, member: discord.Member, *, reason: str = None):
-    if not (has_perm(ctx, "perm3") or is_owner(ctx)):
+    if not has_perm(ctx, "perm3") and not is_owner(ctx):
         await ctx.send("You don't have permission to use this command.")
         await ctx.message.delete()
         return
@@ -578,7 +578,7 @@ async def ban_normal(ctx, member: discord.Member, *, reason: str = None):
 @bot.tree.command(name="ban", description="Ban a member")
 @app_commands.describe(member="Member to ban", reason="Reason for ban")
 async def ban_slash(interaction: discord.Interaction, member: discord.Member, reason: str = None):
-    if not (has_perm_slash(interaction, "perm3") or is_owner_slash(interaction)):
+    if not has_perm_slash(interaction, "perm3") and not is_owner_slash(interaction):
         await interaction.response.send_message("You don't have permission to use this command.", ephemeral=True)
         return
     if member.top_role >= interaction.user.top_role and interaction.user != interaction.guild.owner:
@@ -600,7 +600,6 @@ async def ban_slash(interaction: discord.Interaction, member: discord.Member, re
         )
     except Exception as e:
         await interaction.response.send_message(f"Error: {e}", ephemeral=True)
-
 
 @bot.command(name="unban")
 @commands.has_permissions(ban_members=True)
@@ -635,7 +634,7 @@ async def unban_normal(ctx, user: discord.User):
 @bot.command(name="kick")
 @commands.has_permissions(kick_members=True)
 async def kick_normal(ctx, member: discord.Member, *, reason: str = None):
-    if not (has_perm(ctx, "perm3") or is_owner(ctx)):
+    if not has_perm(ctx, "perm3") and not is_owner(ctx):
         await ctx.send("You don't have permission to use this command.")
         await ctx.message.delete()
         return
@@ -664,7 +663,7 @@ async def kick_normal(ctx, member: discord.Member, *, reason: str = None):
 @bot.tree.command(name="kick", description="Kick a member")
 @app_commands.describe(member="Member to kick", reason="Reason for kick")
 async def kick_slash(interaction: discord.Interaction, member: discord.Member, reason: str = None):
-    if not (has_perm_slash(interaction, "perm3") or is_owner_slash(interaction)):
+    if not has_perm_slash(interaction, "perm3") and not is_owner_slash(interaction):
         await interaction.response.send_message("You don't have permission to use this command.", ephemeral=True)
         return
     if member.top_role >= interaction.user.top_role and interaction.user != interaction.guild.owner:
@@ -704,7 +703,7 @@ async def timeout_normal(ctx, member: discord.Member, duration: str, *, reason: 
         return
     value, unit = int(match.group(1)), match.group(2)
     delta = datetime.timedelta(hours=value) if unit == "h" else datetime.timedelta(minutes=value)
-    until = discord.utils.utcnow() + delta
+    until = datetime.datetime.now(datetime.timezone.utc) + delta
     try:
         await member.timeout(until, reason=reason)
         msg = await ctx.send(f"{member.mention} has been timed out for {value}{unit}.", delete_after=5)
@@ -739,7 +738,7 @@ async def timeout_slash(interaction: discord.Interaction, member: discord.Member
         return
     value, unit = int(match.group(1)), match.group(2)
     delta = datetime.timedelta(hours=value) if unit == "h" else datetime.timedelta(minutes=value)
-    until = discord.utils.utcnow() + delta
+    until = datetime.datetime.now(datetime.timezone.utc) + delta
     try:
         await member.timeout(until, reason=reason)
         await interaction.response.send_message(f"{member.mention} has been timed out for {value}{unit}.")
@@ -818,6 +817,7 @@ async def untimeout_slash(interaction: discord.Interaction, member: discord.Memb
         await interaction.response.send_message("Timeout is not available on this server.", ephemeral=True)
     except Exception as e:
         await interaction.response.send_message(f"Error: {e}", ephemeral=True)
+
 
 # ----------- CLEAR -----------
 
