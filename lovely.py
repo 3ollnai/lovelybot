@@ -504,7 +504,7 @@ async def on_member_remove(member):
 @bot.event
 async def on_command_error(ctx, error):
     if isinstance(error, commands.MissingPermissions):
-        await ctx.send(f"Error: You are missing the required permission(s) to run this command. ({', '.join(error.missing_permissions)})", delete_after=10)
+        await ctx.send("You do not have the required permissions to execute this command.", delete_after=10)
         await ctx.message.delete()
     elif isinstance(error, commands.CommandNotFound):
         await ctx.send("Command not found. Use `&help` to see the list of available commands.", delete_after=10)
