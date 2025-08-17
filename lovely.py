@@ -2087,6 +2087,14 @@ async def leave_server(ctx, server_id: int):
     await ctx.send(f"The bot is leaving the server: {guild.name}.")
     await guild.leave()
 
+
+# ---- PING ----------------
+@bot.command()
+async def ping(ctx):
+    await ctx.send(f"Pong! Latency: {round(bot.latency * 1000)}ms")
+    await ctx.send(f"API latency: {bot.http.latency}ms")
+    
+
 # ----------- LANCEMENT DU BOT ---------
 
 print("Token chargé :", token)
