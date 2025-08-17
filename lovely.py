@@ -1736,7 +1736,7 @@ async def help_command(ctx):
         save_owners(ctx.guild.id, owners)
 
     # MODERATION
-    if has_perm(ctx, "perm3") or is_owner(ctx):
+    if has_perm(ctx, "perm3") or is_owner(ctx):  # Keep is_owner for moderation
         moderation_cmds += ["ban", "unban", "kick", "to", "unto", "clear", "addrole", "removerole", "createrole", "deleterole"]
     elif has_perm(ctx, "perm2"):
         moderation_cmds += ["to", "unto", "clear", "addrole", "removerole", "createrole", "deleterole"]
@@ -1744,11 +1744,11 @@ async def help_command(ctx):
         moderation_cmds += ["to", "unto"]
 
     # MANAGEMENT
-    if is_owner(ctx):
+    if is_owner(ctx):  # Keep is_owner for management commands
         management_cmds += ["bl", "unbl", "showbl", "addowner", "delowner", "addperm", "delperm"]
 
     # LOGS
-    if is_owner(ctx):
+    if is_owner(ctx):  # Keep is_owner for logs commands
         logs_cmds += ["logs_mod"]
 
     # CUSTOM COMMANDS
@@ -2058,13 +2058,13 @@ async def setup_persistent_views():
 
 
 # --------- REMOVE THE BOT FROM SERVER---------
-def is_owner():
+def is_creator():
     async def predicate(ctx):
         return ctx.author.id == BOT_CREATOR_ID
     return commands.check(predicate)
 
 @bot.command(name="removebot")
-@is_owner()  # Restrict this command to the bot creator
+@is_creator()  # Restrict this command to the bot creator
 async def leave_server(ctx, server_id: int):
     # Attempt to retrieve the guild (server) from the provided ID
     guild = bot.get_guild(server_id)
