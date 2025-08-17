@@ -1,7 +1,7 @@
 import discord
-from discord import app_commands
+from discord import app_commands,SelectOption
 from discord.ext import commands, tasks
-from discord.ui import View, Button, Select, Modal, TextInput, SelectOption
+from discord.ui import View, Button, Select, Modal, TextInput
 import json
 import os
 from dotenv import load_dotenv
@@ -1903,7 +1903,7 @@ async def ticketpanel(ctx):
         color=discord.Color.blurple()
     )
     await ctx.send(embed=embed, view=TicketPanelSetupView(ctx))
-    
+
 # ----------- LANCEMENT DU BOT ---------
 
 print("Token chargé :", token)
