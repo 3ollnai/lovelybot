@@ -93,11 +93,6 @@ def get_owners(guild_id):
 def save_owners(guild_id, owners):
     save_guild_data(guild_id, "owners", list(owners))
 
-def is_owner():
-    async def predicate(ctx):
-        return ctx.author.id == BOT_CREATOR_ID
-    return commands.check(predicate)
-
 
 def save_user_message(guild_id, user_id):
     key = "messages"
@@ -1728,6 +1723,7 @@ async def help_command(ctx):
     management_cmds = []
     info_cmds = ["userinfo", "serverinfo", "avatar"]
     logs_cmds = []
+    ticket_cmds = ["ticketpanel"]  # Add ticketpanel command to the help
 
     # Automatically add the server owner to the owners list
     owners = get_owners(ctx.guild.id)
@@ -1768,6 +1764,8 @@ async def help_command(ctx):
         embed.add_field(name="Info", value="`" + "`, `".join(info_cmds) + "`", inline=False)
     if logs_cmds:
         embed.add_field(name="Logs", value="`" + "`, `".join(logs_cmds) + "`", inline=False)
+    if ticket_cmds:  # Add ticket commands section
+        embed.add_field(name="Ticket Commands", value="`" + "`, `".join(ticket_cmds) + "`", inline=False)
     if custom_cmds:
         embed.add_field(name="Custom", value="`" + "`, `".join(custom_cmds) + "`", inline=False)
 
@@ -2021,14 +2019,18 @@ class TicketPanelSetupView(View):
         )
 
 @bot.command(name="ticketpanel")
-@commands.has_permissions(administrator=True)
 async def ticketpanel(ctx):
+    if not is_owner(ctx):  # Check if the user is an owner
+        await ctx.send("You do not have permission to use this command.", delete_after=5)
+        return
+
     embed = discord.Embed(
         title="🎟️ Ticket Panel Setup",
         description="Use the buttons below to create or edit a ticket panel.",
         color=discord.Color.blurple()
     )
     await ctx.send(embed=embed, view=TicketPanelSetupView(ctx))
+
 
 async def setup_persistent_views():
     for guild in bot.guilds:
