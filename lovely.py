@@ -2094,6 +2094,10 @@ async def ping(ctx):
     await ctx.send(f"Pong! Latency: {round(bot.latency * 1000)}ms")
     await ctx.send(f"API latency: {bot.http.latency}ms")
     
+@bot.tree.command()
+async def ping (ctx): 
+    await ctx.send(f"Pong! Latency: {round(bot.latency * 1000)}ms")
+    await ctx.send(f"API latency: {bot.http.latency}ms")
 
 # ----------- LANCEMENT DU BOT ---------
 
