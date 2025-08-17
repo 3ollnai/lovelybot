@@ -1667,16 +1667,6 @@ async def help_command(ctx):
 
 # ----------- TICKET SYSTEM (guild_data) -----------
 
-# --- Fonctions utilitaires (à adapter selon ton stockage) ---
-def load_guild_data(guild_id, key, default):
-    # Remplace par ton système de stockage réel
-    # Exemple : return json.load(...) ou dict.get(...)
-    return default
-
-def save_guild_data(guild_id, key, value):
-    # Remplace par ton système de stockage réel
-    pass
-
 def get_panel_data(guild_id):
     return load_guild_data(guild_id, "panels", [])
 
@@ -1933,6 +1923,7 @@ async def ticketpanel(ctx):
         color=discord.Color.blurple()
     )
     await ctx.send(embed=embed, view=TicketPanelSetupView(ctx))
+
 # ----------- LANCEMENT DU BOT ---------
 
 print("Token chargé :", token)
