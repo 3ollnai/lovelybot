@@ -1514,12 +1514,8 @@ async def avatar(ctx, member: discord.Member = None):
 
 # ----------- ShadowRealm-----------
 @bot.command(name="shadowrealm")
+@commands.has_permissions(manage_roles=True)
 async def shadowrealm(ctx, member: discord.Member, duration: str):
-    # Check if the command user is one of the owners
-    if not is_owner(ctx):
-        await ctx.send("Only owners can use this command.")
-        return
-
     seconds = parse_duration(duration)
     if seconds is None:
         await ctx.send("Invalid duration format. Use formats like 10m, 1h, 30s, etc.")
@@ -1527,20 +1523,33 @@ async def shadowrealm(ctx, member: discord.Member, duration: str):
 
     role = ctx.guild.get_role(1209033095307726899)
     if not role:
-        await ctx.send("Shadowrealm role was not found on this server.")
-        return
+        # Crée le rôle si il n'existe pas
+        bot_role = ctx.guild.me.top_role
+        role = await ctx.guild.create_role(
+            name="Shadowrealm",
+            reason="Role créé automatiquement pour la commande shadowrealm"
+        )
+        # Place le rôle juste en dessous du rôle du bot
+        await ctx.guild.edit_role_positions({role: bot_role.position - 1})
+        await ctx.send("Le rôle Shadowrealm n'existait pas, il vient d'être créé.")
+
+    # Met à jour les permissions sur tous les salons pour ce rôle
+    for channel in ctx.guild.channels:
+        overwrites = channel.overwrites_for(role)
+        overwrites.view_channel = False
+        try:
+            await channel.set_permissions(role, overwrite=overwrites)
+        except Exception as e:
+            print(f"Erreur sur le salon {channel.name}: {e}")
 
     await member.add_roles(role)
     await ctx.send(f"{member.mention} has been sent to the shadowrealm for {duration}.")
 
-    # Save to file for the timer loop, also save the channel ID to send the return message there
-    guild_id = ctx.guild.id
-    shadow_data = load_guild_data(guild_id, "shadowrealm", {})
-    shadow_data[str(member.id)] = {
-        "time": seconds,
-        "channel_id": ctx.channel.id
-    }
-    save_guild_data(guild_id, "shadowrealm", shadow_data)
+    # Wait for the duration, then remove the role and send a message
+    await asyncio.sleep(seconds)
+    await member.remove_roles(role)
+    await ctx.send(f"{member.mention} has returned from the shadowrealm!")
+
 
 @tasks.loop(seconds=1)
 async def shadowrealm_timer():
