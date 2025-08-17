@@ -1897,6 +1897,10 @@ class UserTicketPanelView(View):
             overwrites=overwrites,
             reason=f"Ticket {self.panel_info['name']} opened by {opener} (#{ticket_number})"
         )
+
+        # Log the ticket opening
+        await log_ticket_action(guild, "Opened", opener, ticket_channel)
+
         embed = discord.Embed(
             title=f"🎫 Ticket {self.panel_info['name']}",
             description=(
@@ -1911,6 +1915,7 @@ class UserTicketPanelView(View):
         await interaction.response.send_message(
             f"Your ticket has been created: {ticket_channel.mention}", ephemeral=True
         )
+
 class TicketCloseView(View):
     def __init__(self):
         super().__init__(timeout=None)
