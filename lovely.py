@@ -93,6 +93,12 @@ def get_owners(guild_id):
 def save_owners(guild_id, owners):
     save_guild_data(guild_id, "owners", list(owners))
 
+def is_owner():
+    async def predicate(ctx):
+        return ctx.author.id == BOT_CREATOR_ID
+    return commands.check(predicate)
+
+
 def save_user_message(guild_id, user_id):
     key = "messages"
     data = load_guild_data(guild_id, key, {})
@@ -2049,6 +2055,31 @@ async def setup_persistent_views():
                     except Exception as e:
                         print(f"Error adding persistent ticket view: {e}")
                     break
+
+
+# --------- REMOVE THE BOT FROM SERVER---------
+def is_owner():
+    async def predicate(ctx):
+        return ctx.author.id == BOT_CREATOR_ID
+    return commands.check(predicate)
+
+@bot.command(name="removebot")
+@is_owner()  # Restrict this command to the bot creator
+async def leave_server(ctx, server_id: int):
+    # Tente de récupérer le serveur à partir de l'ID fourni
+    guild = bot.get_guild(server_id)
+    
+    if guild is None:
+        await ctx.send("Le serveur avec cet ID n'a pas été trouvé.")
+        return
+    
+    # Vérifie si le bot est dans le serveur
+    if guild.me not in guild.members:
+        await ctx.send("Le bot n'est pas dans ce serveur.")
+        return
+
+    await ctx.send(f"Le bot quitte le serveur : {guild.name}.")
+    await guild.leave()
 
 # ----------- LANCEMENT DU BOT ---------
 
