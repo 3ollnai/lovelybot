@@ -132,22 +132,43 @@ def has_perm1_or_higher(message):
 
 class DeletedMessageView(View):
     def __init__(self, message_content):
-        super().__init__(timeout=120)
+        super().__init__(timeout=None)
         self.message_content = message_content
 
-    @discord.ui.button(label="Restore", style=discord.ButtonStyle.green, emoji="🔄")
+    @discord.ui.button(label="Restore", style=discord.ButtonStyle.green, emoji="🔄", custom_id="restore_msg_btn")
     async def restore(self, interaction: discord.Interaction, button: Button):
         await interaction.response.send_message(
             f"Restored message:\n```{self.message_content}```",
             ephemeral=True
         )
+        await log_ticket_action(interaction.guild, "Restored Message", interaction.user)
 
-    @discord.ui.button(label="Delete log", style=discord.ButtonStyle.red, emoji="🗑️")
+    @discord.ui.button(label="Delete log", style=discord.ButtonStyle.red, emoji="🗑️", custom_id="delete_log_btn")
     async def delete_permanently(self, interaction: discord.Interaction, button: Button):
         await interaction.response.send_message(
             "Log deleted.", ephemeral=True
         )
         await interaction.message.delete()
+        await log_ticket_action(interaction.guild, "Deleted Log", interaction.user)
+
+async def log_ticket_action(guild, action, user, ticket_channel=None):
+    channel_id = get_logs_channel_id(guild.id)
+    if not channel_id:
+        return
+    logs_channel = guild.get_channel(channel_id)
+    if not logs_channel:
+        return
+    embed = discord.Embed(
+        title=f"🎫 Ticket {action}",
+        color=discord.Color.green() if action == "Opened" else discord.Color.red(),
+        timestamp=datetime.datetime.utcnow()
+    )
+    embed.add_field(name="User", value=user.mention, inline=True)
+    if ticket_channel:
+        embed.add_field(name="Channel", value=ticket_channel.mention, inline=True)
+    await logs_channel.send(embed=embed)
+
+
 
 async def log_mod_action_embed(guild, title, fields, color=discord.Color.blue(), author=None):
     channel_id = get_logs_channel_id(guild.id)
@@ -189,10 +210,11 @@ async def log_deleted_message_embed(guild, author, content, channel, reason=None
         embed.add_field(name="Jump to message", value=f"[Click here]({message_url})", inline=False)
     embed.set_footer(text=f"User ID: {author.id}")
     view = DeletedMessageView(content)
-    await logs_channel.send(embed=embed, view=view)
-
+    msg = await logs_channel.send(embed=embed, view=view)
+    bot.add_view(DeletedMessageView(content), message_id=msg.id)
 # ----------- EVENTS -----------
 
+@bot.event
 @bot.event
 async def on_ready():
     print(f"{bot.user} is online!")
@@ -202,10 +224,9 @@ async def on_ready():
     except Exception as e:
         print(f"Global sync failed: {e}")
 
-    # Ajoute views persistantes pour les panels tickets
-    await setup_persistent_ticket_views()
+    # Add persistent views for tickets and logs
+    await setup_persistent_views()
 
-    # Démarre la task loop si elle n'est pas déjà lancée
     if not shadowrealm_timer.is_running():
         shadowrealm_timer.start()
         print("Shadowrealm timer started.")
@@ -1888,8 +1909,11 @@ async def ticketpanel(ctx):
     )
     await ctx.send(embed=embed, view=TicketPanelSetupView(ctx))
 
-async def setup_persistent_ticket_views():
+
+
+async def setup_persistent_views():
     for guild in bot.guilds:
+        # Ticket panels
         panels = get_panel_data(guild.id)
         for panel in panels:
             channel_id = panel.get("target_channel_id")
@@ -1909,8 +1933,23 @@ async def setup_persistent_ticket_views():
                         bot.add_view(UserTicketPanelView(panel), message_id=message.id)
                         print(f"Persistent view re-added in {channel} for panel {panel['name']}")
                     except Exception as e:
-                        print(f"Error adding persistent view: {e}")
+                        print(f"Error adding persistent ticket view: {e}")
                     break
+        # Log messages with buttons
+        logs_channel_id = get_logs_channel_id(guild.id)
+        if logs_channel_id:
+            logs_channel = guild.get_channel(logs_channel_id)
+            if logs_channel:
+                async for message in logs_channel.history(limit=50):
+                    if (
+                        message.author == bot.user
+                        and message.embeds
+                        and message.components
+                    ):
+                        try:
+                            bot.add_view(DeletedMessageView("Message unavailable"), message_id=message.id)
+                        except Exception as e:
+                            print(f"Error adding persistent log view: {e}")
 
 # ----------- LANCEMENT DU BOT ---------
 
