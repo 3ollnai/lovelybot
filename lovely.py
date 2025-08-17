@@ -2089,15 +2089,15 @@ async def leave_server(ctx, server_id: int):
 
 
 # ---- PING ----------------
-@bot.command()
-async def ping(ctx):
+@bot.command(name="ping")
+async def ping_command(ctx):
     await ctx.send(f"Pong! Latency: {round(bot.latency * 1000)}ms")
     await ctx.send(f"API latency: {bot.http.latency}ms")
-    
-@bot.tree.command()
-async def ping (ctx): 
-    await ctx.send(f"Pong! Latency: {round(bot.latency * 1000)}ms")
-    await ctx.send(f"API latency: {bot.http.latency}ms")
+
+@bot.tree.command(name="ping")
+async def ping_slash(interaction: discord.Interaction):
+    await interaction.response.send_message(f"Pong! Latency: {round(bot.latency * 1000)}ms")
+    await interaction.followup.send(f"API latency: {bot.http.latency}ms")
 
 # ----------- LANCEMENT DU BOT ---------
 
