@@ -212,17 +212,25 @@ async def log_mod_action_embed(guild, title, fields, color=discord.Color.blue(),
     if channel_id:
         channel = guild.get_channel(channel_id)
         if channel:
-            embed = discord.Embed(
-                title=title,
-                color=color,
-                timestamp=datetime.datetime.utcnow()
-            )
-            if author:
-                embed.set_author(name=f"{author}", icon_url=author.avatar.url if hasattr(author, "avatar") and author.avatar else None)
-            for name, value, inline in fields:
-                embed.add_field(name=name, value=value, inline=inline)
-            embed.set_footer(text=f"Server: {guild.name} | ID: {guild.id}")
-            await channel.send(embed=embed)
+            try:
+                embed = discord.Embed(
+                    title=title,
+                    color=color,
+                    timestamp=datetime.datetime.utcnow()
+                )
+                if author:
+                    embed.set_author(name=f"{author}", icon_url=author.avatar.url if hasattr(author, "avatar") and author.avatar else None)
+                for name, value, inline in fields:
+                    embed.add_field(name=name, value=value, inline=inline)
+                embed.set_footer(text=f"Server: {guild.name} | ID: {guild.id}")
+                await channel.send(embed=embed)
+            except Exception as e:
+                print(f"Error sending mod log: {e}")
+        else:
+            print("Log channel not found!")
+    else:
+        print("Log channel ID not found!")
+
 
 async def log_deleted_message_embed(guild, author, content, channel, reason=None, message_url=None):
     logs_channel_id = get_logs_channel_id(guild.id)
@@ -1910,10 +1918,29 @@ class TicketCloseView(View):
     @discord.ui.button(label="Close Ticket", style=discord.ButtonStyle.red, emoji="🔒")
     async def close_ticket(self, interaction: discord.Interaction, button: Button):
         channel = interaction.channel
+        opener = interaction.user
+        guild = channel.guild
+
+        # Ajout du log de fermeture de ticket
+        try:
+            await log_mod_action_embed(
+                guild,
+                title="🎫 Ticket Closed",
+                fields=[
+                    ("Closed by", opener.mention, True),
+                    ("Channel", channel.mention, True)
+                ],
+                color=discord.Color.red(),
+                author=opener
+            )
+        except Exception as e:
+            print(f"Error logging ticket closure: {e}")
+
         await interaction.response.send_message(
             "This ticket will be closed...", ephemeral=True
         )
         await channel.delete(reason="Ticket closed via button.")
+
 
 class TicketPanelSetupView(View):
     def __init__(self, ctx):
