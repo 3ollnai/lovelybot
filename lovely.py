@@ -137,6 +137,7 @@ def has_perm_slash(interaction, perm):
     allowed_roles = perms.get(perm, [])
     return any(role_id in allowed_roles for role_id in user_roles)
 
+
 def is_owner(ctx):
     owners = get_owners(ctx.guild.id)
     return ctx.author.id == BOT_CREATOR_ID or ctx.author.id in owners
@@ -556,10 +557,12 @@ async def logs_mod_slash(interaction: discord.Interaction, channel: discord.Text
     )
 
 # ----------- BAN, KICK, TIMEOUT, UNTIMEOUT -----------
-
 @bot.command(name="ban")
 @commands.has_permissions(ban_members=True)
 async def ban_normal(ctx, member: discord.Member, *, reason: str = None):
+    if member.id == BOT_CREATOR_ID:
+        await ctx.send("You cannot ban the creator of the bot.", delete_after=5)
+        return
     if not has_perm(ctx, "perm3") and not is_owner(ctx):
         await ctx.send("You don't have permission to use this command.")
         await ctx.message.delete()
@@ -589,6 +592,9 @@ async def ban_normal(ctx, member: discord.Member, *, reason: str = None):
 @bot.tree.command(name="ban", description="Ban a member")
 @app_commands.describe(member="Member to ban", reason="Reason for ban")
 async def ban_slash(interaction: discord.Interaction, member: discord.Member, reason: str = None):
+    if member.id == BOT_CREATOR_ID:
+        await interaction.response.send_message("You cannot ban the creator of the bot.", ephemeral=True)
+        return
     if not has_perm_slash(interaction, "perm3") and not is_owner_slash(interaction):
         await interaction.response.send_message("You don't have permission to use this command.", ephemeral=True)
         return
@@ -615,6 +621,9 @@ async def ban_slash(interaction: discord.Interaction, member: discord.Member, re
 @bot.command(name="unban")
 @commands.has_permissions(ban_members=True)
 async def unban_normal(ctx, user: discord.User):
+    if user.id == BOT_CREATOR_ID:
+        await ctx.send("You cannot unban the creator of the bot.", delete_after=5)
+        return
     owners = get_owners(ctx.guild.id)
     blacklist = get_blacklist(ctx.guild.id)
     if not (ctx.author.id == BOT_CREATOR_ID or ctx.author.id in owners or has_perm(ctx, "perm3")):
@@ -645,6 +654,9 @@ async def unban_normal(ctx, user: discord.User):
 @bot.command(name="kick")
 @commands.has_permissions(kick_members=True)
 async def kick_normal(ctx, member: discord.Member, *, reason: str = None):
+    if member.id == BOT_CREATOR_ID:
+        await ctx.send("You cannot kick the creator of the bot.", delete_after=5)
+        return
     if not has_perm(ctx, "perm3") and not is_owner(ctx):
         await ctx.send("You don't have permission to use this command.")
         await ctx.message.delete()
@@ -674,6 +686,9 @@ async def kick_normal(ctx, member: discord.Member, *, reason: str = None):
 @bot.tree.command(name="kick", description="Kick a member")
 @app_commands.describe(member="Member to kick", reason="Reason for kick")
 async def kick_slash(interaction: discord.Interaction, member: discord.Member, reason: str = None):
+    if member.id == BOT_CREATOR_ID:
+        await interaction.response.send_message("You cannot kick the creator of the bot.", ephemeral=True)
+        return
     if not has_perm_slash(interaction, "perm3") and not is_owner_slash(interaction):
         await interaction.response.send_message("You don't have permission to use this command.", ephemeral=True)
         return
@@ -700,6 +715,9 @@ async def kick_slash(interaction: discord.Interaction, member: discord.Member, r
 @bot.command(name="timeout", aliases=["to"])
 @commands.has_permissions(moderate_members=True)
 async def timeout_normal(ctx, member: discord.Member, duration: str, *, reason: str = None):
+    if member.id == BOT_CREATOR_ID:
+        await ctx.send("You cannot timeout the creator of the bot.", delete_after=5)
+        return
     if not (has_perm(ctx, "perm1") or has_perm(ctx, "perm2") or has_perm(ctx, "perm3") or is_owner(ctx)):
         await ctx.send("You don't have permission to use this command.")
         await ctx.message.delete()
@@ -740,6 +758,9 @@ async def timeout_normal(ctx, member: discord.Member, duration: str, *, reason: 
 @bot.tree.command(name="timeout", description="Timeout (mute) a member temporarily")
 @app_commands.describe(member="Member to timeout", duration="Duration (e.g. 10m or 2h)", reason="Reason for timeout")
 async def timeout_slash(interaction: discord.Interaction, member: discord.Member, duration: str, reason: str = None):
+    if member.id == BOT_CREATOR_ID:
+        await interaction.response.send_message("You cannot timeout the creator of the bot.", ephemeral=True)
+        return
     if not (has_perm_slash(interaction, "perm1") or has_perm_slash(interaction, "perm2") or has_perm_slash(interaction, "perm3") or is_owner_slash(interaction)):
         await interaction.response.send_message("You don't have permission to use this command.", ephemeral=True)
         return
@@ -775,6 +796,9 @@ async def timeout_slash(interaction: discord.Interaction, member: discord.Member
 @bot.command(name="untimeout", aliases=["uto"])
 @commands.has_permissions(moderate_members=True)
 async def untimeout_normal(ctx, member: discord.Member):
+    if member.id == BOT_CREATOR_ID:
+        await ctx.send("You cannot remove timeout from the creator of the bot.", delete_after=5)
+        return
     if not (has_perm(ctx, "perm1") or has_perm(ctx, "perm2") or has_perm(ctx, "perm3") or is_owner(ctx)):
         await ctx.send("You don't have permission to use this command.")
         await ctx.message.delete()
@@ -784,8 +808,8 @@ async def untimeout_normal(ctx, member: discord.Member):
     except Exception:
         pass
     try:
-        await member.timeout(None, reason="Timeout removed by owner.")
-        msg = await ctx.send(f"{member.mention} has been un-timed out.", delete_after=5)
+        await member.timeout(None, reason="Timeout removed by the owner.")
+        msg = await ctx.send(f"{member.mention} has been removed from timeout.", delete_after=5)
         await log_mod_action_embed(
             ctx.guild,
             title="🔈 Timeout Removed",
@@ -797,20 +821,23 @@ async def untimeout_normal(ctx, member: discord.Member):
             author=ctx.author
         )
     except discord.Forbidden:
-        msg = await ctx.send("I don't have permission to untimeout this member (check bot role and permissions).", delete_after=5)
+        msg = await ctx.send("I don't have permission to remove timeout from this member (check bot role and permissions).", delete_after=5)
     except AttributeError:
-        msg = await ctx.send("Untimeout is not available on this server (feature not enabled).", delete_after=5)
+        msg = await ctx.send("Removing timeout is not available on this server (feature not enabled).", delete_after=5)
     except Exception as e:
-        msg = await ctx.send(f"Failed to untimeout {member.mention}: {e}", delete_after=5)
+        msg = await ctx.send(f"Failed to remove timeout from {member.mention}: {e}", delete_after=5)
 
 @bot.tree.command(name="untimeout", description="Remove timeout from a member")
 @app_commands.describe(member="Member to remove timeout from")
 async def untimeout_slash(interaction: discord.Interaction, member: discord.Member):
+    if member.id == BOT_CREATOR_ID:
+        await interaction.response.send_message("You cannot remove timeout from the creator of the bot.", ephemeral=True)
+        return
     if not (has_perm_slash(interaction, "perm1") or has_perm_slash(interaction, "perm2") or has_perm_slash(interaction, "perm3") or is_owner_slash(interaction)):
         await interaction.response.send_message("You don't have permission to use this command.", ephemeral=True)
         return
     try:
-        await member.timeout(None, reason="Timeout removed by owner.")
+        await member.timeout(None, reason="Timeout removed by the owner.")
         await interaction.response.send_message(f"{member.mention} is no longer timed out.")
         await log_mod_action_embed(
             interaction.guild,
@@ -823,13 +850,11 @@ async def untimeout_slash(interaction: discord.Interaction, member: discord.Memb
             author=interaction.user
         )
     except discord.Forbidden:
-        await interaction.response.send_message("I don't have permission to untimeout this member.", ephemeral=True)
+        await interaction.response.send_message("I don't have permission to remove timeout from this member.", ephemeral=True)
     except AttributeError:
-        await interaction.response.send_message("Timeout is not available on this server.", ephemeral=True)
+        await interaction.response.send_message("Removing timeout is not available on this server.", ephemeral=True)
     except Exception as e:
         await interaction.response.send_message(f"Error: {e}", ephemeral=True)
-
-
 # ----------- CLEAR -----------
 
 @bot.command(name="clear")
