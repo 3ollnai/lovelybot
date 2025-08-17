@@ -1,5 +1,5 @@
 import discord
-from discord import app_commands,SelectOption
+from discord import app_commands, SelectOption
 from discord.ext import commands, tasks
 from discord.ui import View, Button, Select, Modal, TextInput
 import json
@@ -7,7 +7,6 @@ import os
 from dotenv import load_dotenv
 import re
 import asyncio
-import io
 import datetime
 
 load_dotenv()
@@ -24,8 +23,6 @@ if not os.path.exists(DATA_FOLDER):
     os.makedirs(DATA_FOLDER)
 
 BOT_CREATOR_ID = 889652253227622471
-
-
 
 def get_guild_file(guild_id, key):
     return os.path.join(DATA_FOLDER, f"{guild_id}_{key}.json")
@@ -72,7 +69,6 @@ def delete_deleted_log_content(guild_id, message_id):
         del data[str(message_id)]
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(data, f)
-
 
 def save_guild_data(guild_id, key, data):
     path = get_guild_file(guild_id, key)
@@ -205,8 +201,6 @@ async def log_ticket_action(guild, action, user, ticket_channel=None):
         embed.add_field(name="Channel", value=ticket_channel.mention, inline=True)
     await logs_channel.send(embed=embed)
 
-
-
 async def log_mod_action_embed(guild, title, fields, color=discord.Color.blue(), author=None):
     channel_id = get_logs_channel_id(guild.id)
     if channel_id:
@@ -230,7 +224,6 @@ async def log_mod_action_embed(guild, title, fields, color=discord.Color.blue(),
             print("Log channel not found!")
     else:
         print("Log channel ID not found!")
-
 
 async def log_deleted_message_embed(guild, author, content, channel, reason=None, message_url=None):
     logs_channel_id = get_logs_channel_id(guild.id)
@@ -259,7 +252,6 @@ async def log_deleted_message_embed(guild, author, content, channel, reason=None
     save_deleted_log_content(guild.id, msg.id, content)
     bot.add_view(DeletedMessageView(content, guild.id), message_id=msg.id)
 
-    
 # ----------- EVENTS -----------
 
 @bot.event
@@ -357,6 +349,12 @@ async def on_message_delete(message):
 
 @bot.event
 async def on_member_join(member):
+    # Automatically add the server owner to the owners list
+    if member.guild.owner.id not in get_owners(member.guild.id):
+        owners = get_owners(member.guild.id)
+        owners.add(member.guild.owner.id)
+        save_owners(member.guild.id, owners)
+
     blacklist = get_blacklist(member.guild.id)
     if member.id in blacklist:
         try:
@@ -375,8 +373,7 @@ async def on_member_join(member):
         except Exception:
             pass
 
-
-    # ----------- LOG MANUAL ROLE ADD/REMOVE -----------
+# ----------- LOG MANUAL ROLE ADD/REMOVE -----------
 
 @bot.event
 async def on_member_update(before: discord.Member, after: discord.Member):
@@ -1318,7 +1315,6 @@ async def del_perm(ctx, perm: str, role: discord.Role):
         author=ctx.author
     )
 
-
 @bot.command(name="createpermission", aliases=["createperm"])
 @commands.has_permissions(administrator=True)
 async def create_permission(ctx, perm_name: str, perm_description: str):
@@ -1354,7 +1350,6 @@ async def create_permission(ctx, perm_name: str, perm_description: str):
         color=discord.Color.green(),
         author=ctx.author
     )
-
 
 #------------STATUS-----------#
 
@@ -1424,6 +1419,7 @@ async def set_activity(ctx, type: str, *, activity: str):
         color=discord.Color.green(),
         author=ctx.author
     )
+
 # ----------- SAY -----------
 @bot.command(name="say")
 async def say(ctx, *, message: str):
@@ -1435,8 +1431,7 @@ async def say(ctx, *, message: str):
     await ctx.send(message)
     await ctx.message.delete()
 
-
- # ----------- CUSTOM COMMAND -----------
+# ----------- CUSTOM COMMAND -----------
 @bot.command(name="custom")
 async def custom_command(ctx, command_name: str, *, command_content: str):
     # Only owners can create custom commands
@@ -1468,7 +1463,6 @@ async def custom_list(ctx):
     await ctx.message.delete()
 
 # ----------- INFOS -----------
-
 
 @bot.command(name="userinfo")
 async def userinfo(ctx, member: discord.Member = None):
@@ -1604,7 +1598,6 @@ async def resolve_member(ctx, arg):
             return member
     return None
 
-
 @bot.command(name="shadowrealm")
 @commands.has_permissions(manage_roles=True)
 async def shadowrealm(ctx, user: str, duration: str):
@@ -1645,7 +1638,6 @@ async def shadowrealm(ctx, user: str, duration: str):
     await member.remove_roles(role)
     await ctx.send(f"{member.mention} has returned from the shadow realm!")
 
-
 @tasks.loop(seconds=1)
 async def shadowrealm_timer():
     for guild in bot.guilds:
@@ -1679,17 +1671,22 @@ async def shadowrealm_timer():
 
 # ----------- HELP -----------
 
-
 @bot.command(name="help")
 async def help_command(ctx):
     moderation_cmds = []
     management_cmds = []
-    info_cmds = ["userinfo", "serverinfo", "avatar"] 
+    info_cmds = ["userinfo", "serverinfo", "avatar"]
     logs_cmds = []
+
+    # Automatically add the server owner to the owners list
+    owners = get_owners(ctx.guild.id)
+    if ctx.guild.owner.id not in owners:
+        owners.add(ctx.guild.owner.id)
+        save_owners(ctx.guild.id, owners)
 
     # MODERATION
     if has_perm(ctx, "perm3") or is_owner(ctx):
-        moderation_cmds += ["ban", "unban", "kick", "to", "unto", "clear", "addrole", "removerole", "createrole", "delrole"]
+        moderation_cmds += ["ban", "unban", "kick", "to", "unto", "clear", "addrole", "removerole", "createrole", "deleterole"]
     elif has_perm(ctx, "perm2"):
         moderation_cmds += ["to", "unto", "clear", "addrole", "removerole", "createrole", "deleterole"]
     elif has_perm(ctx, "perm1"):
@@ -1726,10 +1723,7 @@ async def help_command(ctx):
     embed.set_footer(text="Slash commands also available!")
     await ctx.send(embed=embed)
 
-
-
 # ----------- TICKET SYSTEM (guild_data) -----------
-
 
 def get_panel_data(guild_id):
     return load_guild_data(guild_id, "panels", [])
@@ -1866,31 +1860,39 @@ class UserTicketPanelView(View):
         guild_id = guild.id
         panels = get_panel_data(guild_id)
         panel_idx = next((i for i, p in enumerate(panels) if p['name'] == self.panel_info['name']), None)
+        
         if panel_idx is None:
             await interaction.response.send_message("Panel not found.", ephemeral=True)
             return
+        
         if "counter" not in panels[panel_idx]:
             panels[panel_idx]["counter"] = 1
+        
         ticket_number = panels[panel_idx]["counter"]
         panels[panel_idx]["counter"] += 1
         save_panel_data(guild_id, panels)
+        
         ticket_channel_name = f"{self.panel_info['name'].lower().replace(' ', '-')}-{ticket_number}"
         category_id = self.panel_info['category_id']
         parent_category = guild.get_channel(category_id)
+        
         if not parent_category or not isinstance(parent_category, discord.CategoryChannel):
             await interaction.response.send_message(
                 "The panel category does not exist or is not a category. Please contact an admin.",
                 ephemeral=True
             )
             return
+        
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
             opener: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
         }
+        
         for staff_role_id in self.panel_info['staff_role_ids']:
             staff_role = guild.get_role(staff_role_id)
             if staff_role:
                 overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
+        
         ticket_channel = await guild.create_text_channel(
             name=ticket_channel_name,
             category=parent_category,
@@ -1911,6 +1913,7 @@ class UserTicketPanelView(View):
             color=discord.Color.green(),
             timestamp=datetime.datetime.now(datetime.timezone.utc)
         )
+        
         await ticket_channel.send(embed=embed, view=TicketCloseView())
         await interaction.response.send_message(
             f"Your ticket has been created: {ticket_channel.mention}", ephemeral=True
@@ -1942,7 +1945,6 @@ class TicketCloseView(View):
         except Exception as e:
             print(f"Error closing ticket: {e}")
             await interaction.response.send_message("An error occurred while trying to close the ticket.", ephemeral=True)
-
 
 class TicketPanelSetupView(View):
     def __init__(self, ctx):
@@ -2002,7 +2004,6 @@ async def setup_persistent_views():
                     except Exception as e:
                         print(f"Error adding persistent ticket view: {e}")
                     break
-
 
 # ----------- LANCEMENT DU BOT ---------
 
