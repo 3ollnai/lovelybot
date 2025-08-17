@@ -1,7 +1,7 @@
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
-from discord.ui import View, Button, Select
+from discord.ui import View, Button, Select, Modal, TextInput, SelectOption
 import json
 import os
 from dotenv import load_dotenv
@@ -1513,42 +1513,74 @@ async def avatar(ctx, member: discord.Member = None):
     await ctx.send(embed=embed)
 
 # ----------- ShadowRealm-----------
+async def resolve_member(ctx, arg):
+    """
+    Finds a member by mention, ID, username (new Discord format), or server nickname.
+    """
+    # Clean up mention if needed
+    if arg.startswith("<@") and arg.endswith(">"):
+        arg = arg.replace("<@", "").replace(">", "").replace("!", "")
+    # Try by ID
+    if arg.isdigit():
+        member = ctx.guild.get_member(int(arg))
+        if member:
+            return member
+    # Try by username (new Discord format)
+    member = discord.utils.find(lambda m: m.name == arg, ctx.guild.members)
+    if member:
+        return member
+    # Try by server nickname (display_name)
+    member = discord.utils.find(lambda m: m.display_name == arg, ctx.guild.members)
+    if member:
+        return member
+    # (Optional) Try by username#tag for legacy accounts
+    if "#" in arg:
+        name, discrim = arg.rsplit("#", 1)
+        member = discord.utils.find(lambda m: m.name == name and m.discriminator == discrim, ctx.guild.members)
+        if member:
+            return member
+    return None
+
+
 @bot.command(name="shadowrealm")
 @commands.has_permissions(manage_roles=True)
-async def shadowrealm(ctx, member: discord.Member, duration: str):
+async def shadowrealm(ctx, user: str, duration: str):
+    member = await resolve_member(ctx, user)
+    if not member:
+        await ctx.send("User not found. Please mention, provide their ID, username, or server nickname.")
+        return
+
     seconds = parse_duration(duration)
     if seconds is None:
         await ctx.send("Invalid duration format. Use formats like 10m, 1h, 30s, etc.")
         return
 
-    role = ctx.guild.get_role(1209033095307726899)
+    role_name = "SHADOW REALM☯️"
+    role = discord.utils.get(ctx.guild.roles, name=role_name)
+
     if not role:
-        # Crée le rôle si il n'existe pas
         bot_role = ctx.guild.me.top_role
         role = await ctx.guild.create_role(
-            name="Shadowrealm",
-            reason="Role créé automatiquement pour la commande shadowrealm"
+            name=role_name,
+            reason="Role automatically created for the shadowrealm command"
         )
-        # Place le rôle juste en dessous du rôle du bot
         await ctx.guild.edit_role_positions({role: bot_role.position - 1})
-        await ctx.send("Le rôle Shadowrealm n'existait pas, il vient d'être créé.")
+        await ctx.send(f"The {role_name} role did not exist and has been created.")
 
-    # Met à jour les permissions sur tous les salons pour ce rôle
     for channel in ctx.guild.channels:
         overwrites = channel.overwrites_for(role)
         overwrites.view_channel = False
         try:
             await channel.set_permissions(role, overwrite=overwrites)
         except Exception as e:
-            print(f"Erreur sur le salon {channel.name}: {e}")
+            print(f"Error updating {channel.name}: {e}")
 
     await member.add_roles(role)
-    await ctx.send(f"{member.mention} has been sent to the shadowrealm for {duration}.")
+    await ctx.send(f"{member.mention} has been sent to the shadow realm for {duration}.")
 
-    # Wait for the duration, then remove the role and send a message
     await asyncio.sleep(seconds)
     await member.remove_roles(role)
-    await ctx.send(f"{member.mention} has returned from the shadowrealm!")
+    await ctx.send(f"{member.mention} has returned from the shadow realm!")
 
 
 @tasks.loop(seconds=1)
@@ -1634,196 +1666,244 @@ async def help_command(ctx):
 
 
 # ----------- TICKET SYSTEM (guild_data) -----------
-def get_ticket_data(guild_id):
-    return load_guild_data(guild_id, "tickets", {
-        "categories": [],
-        "staff_roles": {},
-        "counters": {},
-    })
+# --- Utility functions for panel management ---
+def get_panel_data(guild_id):
+    return load_guild_data(guild_id, "panels", [])
 
-def save_ticket_data(guild_id, data):
-    save_guild_data(guild_id, "tickets", data)
+def save_panel_data(guild_id, panels):
+    save_guild_data(guild_id, "panels", panels)
 
-def get_ticket_logs_channel(guild):
-    logs_id = get_logs_channel_id(guild.id)
-    if logs_id:
-        return guild.get_channel(logs_id)
-    return None
+# --- Modal for panel name/description ---
+class PanelSetupModal(Modal, title="Create Ticket Panel"):
+    panel_name = TextInput(label="Panel Name", placeholder="e.g. Support")
+    panel_desc = TextInput(label="Panel Description", placeholder="Short description", required=False)
+    async def on_submit(self, interaction: discord.Interaction):
+        self.stop()
 
-class TicketCloseView(View):
-    def __init__(self, opener: discord.Member, category: str, ticket_number: int):
-        super().__init__(timeout=None)
-        self.opener = opener
-        self.category = category
-        self.ticket_number = ticket_number
-
-    @discord.ui.button(label="Close Ticket", style=discord.ButtonStyle.red, emoji="🔒")
-    async def close(self, interaction: discord.Interaction, button: Button):
-        if interaction.user != self.opener and not interaction.user.guild_permissions.manage_channels:
-            await interaction.response.send_message("Only the ticket author or staff can close this ticket.", ephemeral=True)
-            return
-
-        await interaction.response.send_message("Closing ticket...", ephemeral=True)
-
-        # DM to user (embed only)
-        dm_embed = discord.Embed(
-            title=f"Your Ticket Closed: {self.category} #{self.ticket_number}",
-            description="Your ticket has been closed. Thank you for contacting us!",
-            color=discord.Color.blurple()
-        )
-        try:
-            await self.opener.send(embed=dm_embed)
-        except Exception:
-            pass
-
-        # Log channel for staff (embed only)
-        staff_log_channel = get_ticket_logs_channel(interaction.guild)
-        if staff_log_channel:
-            log_embed = discord.Embed(
-                title=f"Ticket Closed: {self.category} #{self.ticket_number}",
-                description=f"Closed by {interaction.user.mention}\nTicket author: {self.opener.mention}",
-                color=discord.Color.red()
-            )
-            await staff_log_channel.send(embed=log_embed)
-
-        await interaction.channel.delete()
-
-class TicketCategorySelect(Select):
-    def __init__(self, guild_id):
-        self.guild_id = guild_id
-        ticket_data = get_ticket_data(guild_id)
-        categories = ticket_data["categories"]
+# --- Category selector ---
+class PanelCategorySelect(Select):
+    def __init__(self, guild: discord.Guild):
         options = [
-            discord.SelectOption(
-                label=cat,
-                description=f"Open a ticket for {cat}",
-                emoji="🎫"
-            ) for cat in categories
+            SelectOption(label=cat.name, value=str(cat.id))
+            for cat in guild.channels if isinstance(cat, discord.CategoryChannel)
         ]
         super().__init__(
-            placeholder="Choose your ticket category...",
-            min_values=1,
-            max_values=1,
-            options=options
+            placeholder="Select the category where tickets will be created...",
+            min_values=1, max_values=1, options=options
+        )
+    async def callback(self, interaction: discord.Interaction):
+        self.view.selected_category_id = int(self.values[0])
+        await interaction.response.send_message(
+            f"Selected category: <#{self.values[0]}>. Now select staff roles.",
+            ephemeral=True
+        )
+        await interaction.followup.send(
+            "Select staff roles allowed to view tickets:",
+            view=PanelRoleSelectView(interaction.guild, self.view.panel_info, self.view.selected_category_id)
         )
 
+# --- Staff role selector ---
+class PanelRoleSelect(Select):
+    def __init__(self, guild: discord.Guild):
+        options = [
+            SelectOption(label=role.name, value=str(role.id))
+            for role in guild.roles if not role.is_default()
+        ]
+        super().__init__(
+            placeholder="Select staff roles...", min_values=1, max_values=len(options), options=options
+        )
     async def callback(self, interaction: discord.Interaction):
-        category_name = self.values[0]
+        self.view.selected_role_ids = [int(v) for v in self.values]
+        await interaction.response.send_message(
+            "Where should the panel be posted? Select the text channel.",
+            ephemeral=True,
+            view=PanelTargetChannelSelectView(interaction.guild, self.view.panel_info, self.view.selected_category_id, self.view.selected_role_ids)
+        )
+
+class PanelRoleSelectView(View):
+    def __init__(self, guild: discord.Guild, panel_info: dict, selected_category_id: int):
+        super().__init__(timeout=120)
+        self.add_item(PanelRoleSelect(guild))
+        self.panel_info = panel_info
+        self.selected_category_id = selected_category_id
+        self.selected_role_ids = []
+
+# --- Selector for the channel to post the panel ---
+class PanelTargetChannelSelect(Select):
+    def __init__(self, guild: discord.Guild):
+        options = [
+            SelectOption(label=ch.name, value=str(ch.id))
+            for ch in guild.text_channels
+        ]
+        super().__init__(
+            placeholder="Select the channel for the ticket panel...", min_values=1, max_values=1, options=options
+        )
+    async def callback(self, interaction: discord.Interaction):
+        self.view.target_channel_id = int(self.values[0])
+        # Gather panel info
+        panel_info = self.view.panel_info
+        panel_info['category_id'] = self.view.selected_category_id
+        panel_info['staff_role_ids'] = self.view.selected_role_ids
+        panel_info['target_channel_id'] = self.view.target_channel_id
+        # Save to guild data
+        guild_id = interaction.guild.id
+        panels = get_panel_data(guild_id)
+        panels.append(panel_info)
+        save_panel_data(guild_id, panels)
+        # Post the panel in the selected channel
+        target_channel = interaction.guild.get_channel(self.view.target_channel_id)
+        if target_channel:
+            embed = discord.Embed(
+                title=f"🎟️ {panel_info['name']}",
+                description=panel_info['description'],
+                color=discord.Color.blurple()
+            )
+            await target_channel.send(embed=embed, view=UserTicketPanelView(panel_info))
+        await interaction.response.send_message(
+            f"Panel **{panel_info['name']}** created and posted in <#{panel_info['target_channel_id']}>!",
+            ephemeral=True
+        )
+
+class PanelTargetChannelSelectView(View):
+    def __init__(self, guild: discord.Guild, panel_info: dict, selected_category_id: int, selected_role_ids: list):
+        super().__init__(timeout=120)
+        self.add_item(PanelTargetChannelSelect(guild))
+        self.panel_info = panel_info
+        self.selected_category_id = selected_category_id
+        self.selected_role_ids = selected_role_ids
+        self.target_channel_id = None
+
+# --- View for users to open tickets ---
+class UserTicketPanelView(View):
+    def __init__(self, panel_info: dict):
+        super().__init__(timeout=None)
+        self.panel_info = panel_info
+
+    @discord.ui.button(label="Open a Ticket", style=discord.ButtonStyle.green, emoji="🎫")
+    async def open_ticket(self, interaction: discord.Interaction, button: Button):
         guild = interaction.guild
         opener = interaction.user
 
-        ticket_data = get_ticket_data(guild.id)
-        counters = ticket_data.get("counters", {})
-        ticket_number = counters.get(category_name, 1)
-        counters[category_name] = ticket_number + 1
-        ticket_data["counters"] = counters
-        save_ticket_data(guild.id, ticket_data)
+        # Get panels and the index of the current panel
+        guild_id = guild.id
+        panels = get_panel_data(guild_id)
+        panel_idx = next((i for i, p in enumerate(panels) if p['name'] == self.panel_info['name']), None)
+        if panel_idx is None:
+            await interaction.response.send_message("Panel not found.", ephemeral=True)
+            return
 
-        ticket_channel_name = f"{category_name.lower().replace(' ', '-')}-{ticket_number}"
+        # Ticket counter per panel
+        if "counter" not in panels[panel_idx]:
+            panels[panel_idx]["counter"] = 1
+        ticket_number = panels[panel_idx]["counter"]
+        panels[panel_idx]["counter"] += 1
+        save_panel_data(guild_id, panels)
 
-        parent_category_id = 1340351234863009953
-        parent_category = guild.get_channel(parent_category_id)
+        # Ticket channel name
+        ticket_channel_name = f"{self.panel_info['name'].lower().replace(' ', '-')}-{ticket_number}"
+
+        # Get category
+        category_id = self.panel_info['category_id']
+        parent_category = guild.get_channel(category_id)
         if not parent_category or not isinstance(parent_category, discord.CategoryChannel):
             await interaction.response.send_message(
-                "The ticket category does not exist or is not a category. Please contact an admin.",
+                "The panel category does not exist or is not a category. Please contact an admin.",
                 ephemeral=True
             )
             return
 
+        # Permissions
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
             opener: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
         }
-
-        staff_roles_dict = ticket_data.get("staff_roles", {})
-        staff_role_ids = staff_roles_dict.get(category_name, [])
-        if isinstance(staff_role_ids, int):
-            staff_role_ids = [staff_role_ids]
-        elif not isinstance(staff_role_ids, list):
-            staff_role_ids = []
-
-        for staff_role_id in staff_role_ids:
+        for staff_role_id in self.panel_info['staff_role_ids']:
             staff_role = guild.get_role(staff_role_id)
             if staff_role:
                 overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
 
+        # Create the channel
         ticket_channel = await guild.create_text_channel(
             name=ticket_channel_name,
             category=parent_category,
             overwrites=overwrites,
-            reason=f"Ticket {category_name} opened by {opener} (#{ticket_number})"
+            reason=f"Ticket {self.panel_info['name']} opened by {opener} (#{ticket_number})"
         )
 
+        # Welcome embed
         embed = discord.Embed(
-            title=f"🎫 Ticket {category_name}",
+            title=f"🎫 Ticket {self.panel_info['name']}",
             description=(
-                f"Hello {opener.mention}, your **{category_name}** ticket is now open!\n"
-                "A staff member will assist you soon.\n\n"
+                f"Hello {opener.mention}, your ticket **{self.panel_info['name']}** has been opened!\n"
+                "A staff member will respond as soon as possible.\n\n"
                 "Use the button below to close this ticket."
             ),
             color=discord.Color.green()
         )
-        await ticket_channel.send(embed=embed, view=TicketCloseView(opener, category_name, ticket_number))
+        await ticket_channel.send(embed=embed, view=TicketCloseView())
 
         await interaction.response.send_message(
             f"Your ticket has been created: {ticket_channel.mention}", ephemeral=True
         )
 
-class TicketPanelView(View):
-    def __init__(self, guild_id):
+# --- View to close the ticket ---
+class TicketCloseView(View):
+    def __init__(self):
         super().__init__(timeout=None)
-        self.add_item(TicketCategorySelect(guild_id))
 
+    @discord.ui.button(label="Close Ticket", style=discord.ButtonStyle.red, emoji="🔒")
+    async def close_ticket(self, interaction: discord.Interaction, button: Button):
+        channel = interaction.channel
+        await interaction.response.send_message(
+            "This ticket will be closed...", ephemeral=True
+        )
+        await channel.delete(reason="Ticket closed via button.")
+
+# --- Initial setup view ---
+class TicketPanelSetupView(View):
+    def __init__(self, ctx):
+        super().__init__(timeout=120)
+        self.ctx = ctx
+
+    @discord.ui.button(label="Create new ticket panel", style=discord.ButtonStyle.green)
+    async def create_panel(self, interaction: discord.Interaction, button: Button):
+        modal = PanelSetupModal()
+        await interaction.response.send_modal(modal)
+        await modal.wait()
+        panel_info = {
+            "name": modal.panel_name.value,
+            "description": modal.panel_desc.value or "No description."
+        }
+        await interaction.followup.send(
+            f"Panel name: **{panel_info['name']}**\nNow select the ticket category:",
+            view=PanelCategorySelectView(interaction.guild, panel_info),
+            ephemeral=True
+        )
+
+    @discord.ui.button(label="Edit existing ticket panel", style=discord.ButtonStyle.blurple)
+    async def edit_panel(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.send_message(
+            "Panel editing is not implemented yet.", ephemeral=True
+        )
+
+class PanelCategorySelectView(View):
+    def __init__(self, guild: discord.Guild, panel_info: dict):
+        super().__init__(timeout=120)
+        self.add_item(PanelCategorySelect(guild))
+        self.panel_info = panel_info
+        self.selected_category_id = None
+
+# --- Main command ---
 @bot.command(name="ticketpanel")
 @commands.has_permissions(administrator=True)
-async def ticketpanel(ctx, categories: str, *, roles_str: str):
-    """
-    Usage: &ticketpanel "Support|Report|Partnership" @Support1 @Support2 ; @Report1 ; @Partnership1 @Partnership2
-    """
-    cats = [cat.strip() for cat in categories.split("|") if cat.strip()]
-    roles_per_cat = [block.strip() for block in roles_str.split(";")]
-
-    if len(cats) != len(roles_per_cat):
-        await ctx.send("You must provide staff roles for each category, separated by ';'.", delete_after=10)
-        return
-
-    staff_roles = {}
-    for cat, role_block in zip(cats, roles_per_cat):
-        roles = []
-        for role_mention in role_block.split():
-            if role_mention.startswith("<@&"):
-                role_id = int(role_mention[3:-1])
-                role = ctx.guild.get_role(role_id)
-                if role:
-                    roles.append(role.id)
-        staff_roles[cat] = roles
-
-    ticket_data = get_ticket_data(ctx.guild.id)
-    ticket_data["categories"] = cats
-    ticket_data["staff_roles"] = staff_roles
-    if "counters" not in ticket_data:
-        ticket_data["counters"] = {}
-    for cat in cats:
-        if cat not in ticket_data["counters"]:
-            ticket_data["counters"][cat] = 1
-    save_ticket_data(ctx.guild.id, ticket_data)
-
+async def ticketpanel(ctx):
     embed = discord.Embed(
-        title="🎟️ Open a Ticket",
-        description="Click the menu below and select the category of your request.\nA private channel will be created for you.",
+        title="🎟️ Ticket Panel Setup",
+        description="Use the buttons below to create or edit a ticket panel.",
         color=discord.Color.blurple()
     )
-
-    target_channel_id = 1340355613963587690
-    target_channel = ctx.guild.get_channel(target_channel_id)
-    if not target_channel:
-        await ctx.send("The ticket panel channel could not be found.", delete_after=10)
-        return
-
-    await target_channel.send(embed=embed, view=TicketPanelView(ctx.guild.id))
-    await ctx.send(f"Panel successfully created/updated in {target_channel.mention}!", delete_after=10)
-
-
+    await ctx.send(embed=embed, view=TicketPanelSetupView(ctx))
+    
 # ----------- LANCEMENT DU BOT ---------
 
 print("Token chargé :", token)
