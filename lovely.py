@@ -1926,7 +1926,6 @@ class TicketCloseView(View):
         opener = interaction.user
         guild = channel.guild
 
-        # Ajout du log de fermeture de ticket
         try:
             await log_mod_action_embed(
                 guild,
@@ -1938,13 +1937,11 @@ class TicketCloseView(View):
                 color=discord.Color.red(),
                 author=opener
             )
+            await interaction.response.send_message("This ticket will be closed...", ephemeral=True)
+            await channel.delete(reason="Ticket closed via button.")
         except Exception as e:
-            print(f"Error logging ticket closure: {e}")
-
-        await interaction.response.send_message(
-            "This ticket will be closed...", ephemeral=True
-        )
-        await channel.delete(reason="Ticket closed via button.")
+            print(f"Error closing ticket: {e}")
+            await interaction.response.send_message("An error occurred while trying to close the ticket.", ephemeral=True)
 
 
 class TicketPanelSetupView(View):
@@ -1982,7 +1979,6 @@ async def ticketpanel(ctx):
 
 async def setup_persistent_views():
     for guild in bot.guilds:
-        # Ticket panels
         panels = get_panel_data(guild.id)
         for panel in panels:
             channel_id = panel.get("target_channel_id")
@@ -1998,30 +1994,15 @@ async def setup_persistent_views():
                     and message.embeds[0].title == f"🎟️ {panel['name']}"
                     and message.embeds[0].description == panel['description']
                 ):
+                    # Réajouter la vue ici
                     try:
-                        bot.add_view(UserTicketPanelView(panel), message_id=message.id)
+                        view = UserTicketPanelView(panel)
+                        bot.add_view(view, message_id=message.id)  # Assurez-vous que cela fonctionne correctement
                         print(f"Persistent view re-added in {channel} for panel {panel['name']}")
                     except Exception as e:
                         print(f"Error adding persistent ticket view: {e}")
                     break
 
-        # Log messages with buttons (SUPPRIMÉS)
-        logs_channel_id = get_logs_channel_id(guild.id)
-        if logs_channel_id:
-            logs_channel = guild.get_channel(logs_channel_id)
-            if logs_channel:
-                async for message in logs_channel.history(limit=50):
-                    if (
-                        message.author == bot.user
-                        and message.embeds
-                        and message.components
-                    ):
-                        try:
-                            # Charge le contenu supprimé spécifique à ce serveur et ce message
-                            content = load_deleted_log_content(guild.id, message.id)
-                            bot.add_view(DeletedMessageView(content, guild.id), message_id=message.id)
-                        except Exception as e:
-                            print(f"Error adding persistent log view: {e}")
 
 # ----------- LANCEMENT DU BOT ---------
 
