@@ -1771,7 +1771,7 @@ class PanelTargetChannelSelect(Select):
                 color=discord.Color.blurple()
             )
             message = await target_channel.send(embed=embed, view=UserTicketPanelView(panel_info))
-            await bot.add_view(UserTicketPanelView(panel_info), message_id=message.id)
+            bot.add_view(UserTicketPanelView(panel_info), message_id=message.id)
         await interaction.response.send_message(
             f"Panel **{panel_info['name']}** created and posted in <#{panel_info['target_channel_id']}>!",
             ephemeral=True
@@ -1843,7 +1843,6 @@ class UserTicketPanelView(View):
         await interaction.response.send_message(
             f"Your ticket has been created: {ticket_channel.mention}", ephemeral=True
         )
-
 class TicketCloseView(View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -1912,7 +1911,6 @@ async def setup_persistent_ticket_views():
                     except Exception as e:
                         print(f"Error adding persistent view: {e}")
                     break
-
 
 # ----------- LANCEMENT DU BOT ---------
 
