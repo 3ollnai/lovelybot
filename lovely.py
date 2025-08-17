@@ -271,6 +271,15 @@ async def on_ready():
         print("Shadowrealm timer started.")
 
 @bot.event
+async def on_guild_join(guild):
+    # Ajoute automatiquement l'owner du serveur à la liste des owners
+    owners = get_owners(guild.id)
+    if guild.owner.id not in owners:
+        owners.add(guild.owner.id)
+        save_owners(guild.id, owners)
+        print(f"Owner {guild.owner} added to the owners list for guild {guild.name}.")
+
+@bot.event
 async def on_message(message):
     if message.author == bot.user or not message.guild:
         return
