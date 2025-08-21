@@ -8,7 +8,8 @@ import os
 from dotenv import load_dotenv
 import re
 import asyncio
-import datetime
+import datetime 
+from datetime import timedelta
 
 load_dotenv()
 token = os.getenv("DISCORD_TOKEN")
@@ -261,31 +262,6 @@ async def log_deleted_message_embed(guild, author, content, channel, reason=None
 # ----------- EVENTS -----------
 
 @bot.event
-async def on_ready():
-    print(f"{bot.user} is online!")
-    try:
-        synced = await bot.tree.sync()
-        print(f"Global sync: {len(synced)} slash commands.")
-    except Exception as e:
-        print(f"Global sync failed: {e}")
-
-    # Add persistent views for tickets and logs
-    await setup_persistent_views()
-
-    if not shadowrealm_timer.is_running():
-        shadowrealm_timer.start()
-        print("Shadowrealm timer started.")
-
-@bot.event
-async def on_guild_join(guild):
-    # Ajoute automatiquement l'owner du serveur à la liste des owners
-    owners = get_owners(guild.id)
-    if guild.owner.id not in owners:
-        owners.add(guild.owner.id)
-        save_owners(guild.id, owners)
-        print(f"Owner {guild.owner} added to the owners list for guild {guild.name}.")
-
-@bot.event
 async def on_message(message):
     if message.author == bot.user or not message.guild:
         return
@@ -319,7 +295,7 @@ async def on_message(message):
         # Check if the user has exceeded the threshold
         if link_message_counts[message.author.id] > LINK_THRESHOLD:
             try:
-                await message.author.timeout(discord.utils.utcnow() + discord.timedelta(seconds=TIMEOUT_DURATION), reason="Exceeded link message limit.")
+                await message.author.timeout(timedelta(seconds=TIMEOUT_DURATION), reason="Exceeded link message limit.")
                 await message.channel.send(f"{message.author.mention}, you have been timed out for 10 minutes due to excessive link messages.")
                 print(f"Timed out {message.author.name} for sending too many link messages.")
             except discord.Forbidden:
@@ -387,7 +363,7 @@ async def on_message(message):
             return
 
     await bot.process_commands(message)
-    
+
 @bot.event
 async def on_message_delete(message):
     if message.guild and message.author != bot.user:
