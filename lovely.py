@@ -357,15 +357,15 @@ async def on_message_delete(message):
             reason="Manual or other deletion",
             message_url=message.jump_url
         )
-
 @bot.event
 async def on_member_join(member):
     # Automatically add the server owner to the owners list
-    if member.guild.owner.id not in get_owners(member.guild.id):
-        owners = get_owners(member.guild.id)
+    owners = get_owners(member.guild.id)
+    if member.guild.owner.id not in owners:
         owners.add(member.guild.owner.id)
         save_owners(member.guild.id, owners)
 
+    # Check if the member is on the blacklist
     blacklist = get_blacklist(member.guild.id)
     if member.id in blacklist:
         try:
@@ -381,8 +381,27 @@ async def on_member_join(member):
                 color=discord.Color.red(),
                 author=member
             )
-        except Exception:
-            pass
+        except discord.Forbidden:
+            print("The bot does not have permission to ban this user.")
+        except discord.HTTPException as e:
+            print(f"Error while banning the user: {e}")
+        except Exception as e:
+            print(f"An unexpected error occurred: {e}")
+    else:
+        # Automatically assign a role to the new member using role ID
+        role_id = 1408228351277011055  # Replace with your actual role ID
+        role = member.guild.get_role(role_id)
+        if role:
+            try:
+                await member.add_roles(role)
+                print(f"Assigned role {role.name} to {member.name}.")
+            except discord.Forbidden:
+                print("The bot does not have permission to assign roles.")
+            except discord.HTTPException as e:
+                print(f"Error while assigning role to the user: {e}")
+            except Exception as e:
+                print(f"An unexpected error occurred while assigning role: {e}")
+
 
 # ----------- LOG MANUAL ROLE ADD/REMOVE -----------
 
@@ -1469,8 +1488,8 @@ async def set_activity(ctx, type: str, *, activity: str):
 # ----------- SAY -----------
 @bot.command(name="say")
 async def say(ctx, *, message: str):
-    # Only perm2, perm3, or owner can use
-    if not (has_perm(ctx, "perm2") or has_perm(ctx, "perm3") or is_owner(ctx)):
+    # Only  perm3, or owner can use
+    if not (has_perm(ctx, "perm3") or is_owner(ctx)):
         await ctx.send("You don't have permission to use this command.", delete_after=5)
         await ctx.message.delete()
         return
