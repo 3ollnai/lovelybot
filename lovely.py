@@ -1,4 +1,5 @@
 import discord
+from collections import defaultdict
 from discord import app_commands, SelectOption
 from discord.ext import commands, tasks
 from discord.ui import View, Button, Select, Modal, TextInput
@@ -17,7 +18,10 @@ bot = commands.Bot(command_prefix="&", intents=intents)
 bot.remove_command('help')
 
 BAD_WORDS = ["nigger", "jobless", "kys"]
+LINK_THRESHOLD = 3  # Number of allowed link messages before timeout
+TIMEOUT_DURATION = 600  # Timeout duration in seconds (10 minutes)
 DATA_FOLDER = "guild_data"
+link_message_counts = defaultdict(int)
 
 if not os.path.exists(DATA_FOLDER):
     os.makedirs(DATA_FOLDER)
@@ -304,6 +308,44 @@ async def on_message(message):
             )
             return
 
+    # Check for links and allowed roles
+    allowed_roles = [123456789012345678, 234567890123456789]  # Replace with actual role IDs
+    has_allowed_role = any(role.id in allowed_roles for role in message.author.roles)
+
+    if not has_allowed_role and ("http://" in message.content or "https://" in message.content):
+        # Increment link message count for the user
+        link_message_counts[message.author.id] += 1
+
+        # Check if the user has exceeded the threshold
+        if link_message_counts[message.author.id] > LINK_THRESHOLD:
+            try:
+                await message.author.timeout(discord.utils.utcnow() + discord.timedelta(seconds=TIMEOUT_DURATION), reason="Exceeded link message limit.")
+                await message.channel.send(f"{message.author.mention}, you have been timed out for 10 minutes due to excessive link messages.")
+                print(f"Timed out {message.author.name} for sending too many link messages.")
+            except discord.Forbidden:
+                print("The bot does not have permission to timeout this user.")
+            except discord.HTTPException as e:
+                print(f"Error while timing out the user: {e}")
+            except Exception as e:
+                print(f"An unexpected error occurred: {e}")
+            return
+
+        # Delete the message
+        try:
+            await message.delete()
+            await message.channel.send(f"{message.author.mention}, your message contained a link and has been deleted.")
+            print(f"Deleted message from {message.author.name} for containing a link.")
+        except discord.Forbidden:
+            print("The bot does not have permission to delete messages.")
+        except discord.HTTPException as e:
+            print(f"Error while deleting the message: {e}")
+        except Exception as e:
+            print(f"An unexpected error occurred: {e}")
+        return
+
+    # Reset the count if the user sends a valid message
+    link_message_counts[message.author.id] = 0
+
     save_user_message(message.guild.id, message.author.id)
 
     # Custom command handling
@@ -345,7 +387,7 @@ async def on_message(message):
             return
 
     await bot.process_commands(message)
-
+    
 @bot.event
 async def on_message_delete(message):
     if message.guild and message.author != bot.user:
