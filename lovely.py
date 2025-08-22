@@ -1888,22 +1888,28 @@ class PanelRoleSelect(Select):
         options = [
             SelectOption(label=role.name, value=str(role.id))
             for role in guild.roles if not role.is_default()
-        ][:25]
+        ]
+        
+        # Si vous souhaitez permettre la sélection de plusieurs rôles, vous pouvez ajuster max_values
         super().__init__(
-            placeholder="Select staff roles...", min_values=1, max_values=len(options), options=options
+            placeholder="Select staff roles...",
+            min_values=1,
+            max_values=len(options),  # Permettre la sélection de tous les rôles
+            options=options
         )
-    async def callback(self, interaction: discord.Interaction):
-        self.view.selected_role_ids = [int(v) for v in self.values]
-        await interaction.response.send_message(
-            "Where should the panel be posted? Select the text channel.",
-            ephemeral=True,
-            view=PanelTargetChannelSelectView(
-                interaction.guild,
-                self.view.panel_info,
-                self.view.selected_category_id,
-                self.view.selected_role_ids
-            )
+
+async def callback(self, interaction: discord.Interaction):
+    self.view.selected_role_ids = [int(v) for v in self.values]  # Récupérer les IDs des rôles sélectionnés
+    await interaction.response.send_message(
+        "Where should the panel be posted? Select the text channel.",
+        ephemeral=True,
+        view=PanelTargetChannelSelectView(
+            interaction.guild,
+            self.view.panel_info,
+            self.view.selected_category_id,
+            self.view.selected_role_ids  # Passer les rôles sélectionnés
         )
+    )
 
 class PanelRoleSelectView(View):
     def __init__(self, guild: discord.Guild, panel_info: dict, selected_category_id: int):
@@ -1911,7 +1917,8 @@ class PanelRoleSelectView(View):
         self.add_item(PanelRoleSelect(guild))
         self.panel_info = panel_info
         self.selected_category_id = selected_category_id
-        self.selected_role_ids = []
+        self.selected_role_ids = []  # Initialiser la liste des rôles sélectionnés
+
 
 class PanelTargetChannelSelect(Select):
     def __init__(self, guild: discord.Guild):
