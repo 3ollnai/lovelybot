@@ -329,7 +329,7 @@ async def on_message(message):
             return
 
     # Check for links and allowed roles
-    allowed_roles = [1408234280991326289, 1408234280274100294,1408234273026080920,1408197318825738301]  # Replace with actual role IDs
+    allowed_roles = [1408234280991326289, 1408234280274100294,1408234273026080920,1408197318825738301,1408198061632524448,1408198562214449152]  # Replace with actual role IDs
     has_allowed_role = any(role.id in allowed_roles for role in message.author.roles)
 
     if not has_allowed_role and ("http://" in message.content or "https://" in message.content):
