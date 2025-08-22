@@ -262,6 +262,23 @@ async def log_deleted_message_embed(guild, author, content, channel, reason=None
 # ----------- EVENTS -----------
 
 @bot.event
+async def on_ready():
+    print(f"{bot.user} is online!")
+    try:
+        synced = await bot.tree.sync()
+        print(f"Global sync: {len(synced)} slash commands.")
+    except Exception as e:
+        print(f"Global sync failed: {e}")
+
+    # Add persistent views for tickets and logs
+    await setup_persistent_views()
+
+    if not shadowrealm_timer.is_running():
+        shadowrealm_timer.start()
+        print("Shadowrealm timer started.")
+
+
+@bot.event
 async def on_message(message):
     if message.author == bot.user or not message.guild:
         return
