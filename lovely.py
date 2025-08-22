@@ -36,7 +36,6 @@ LEAVE_MESSAGES = [
     "🌈 Goodbye, {member}! Wishing you all the best!"
 ]
 
-link_message_counts = defaultdict(int)
 
 
 if not os.path.exists(DATA_FOLDER):
