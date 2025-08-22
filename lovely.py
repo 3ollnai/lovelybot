@@ -1871,10 +1871,12 @@ class PanelCategorySelect(Select):
             f"Selected category: <#{self.values[0]}>. Now select staff roles.",
             ephemeral=True
         )
+        
+        # Envoyer un message pour sélectionner les rôles
         await interaction.followup.send(
             "Select staff roles allowed to view tickets:",
             view=PanelRoleSelectView(interaction.guild, self.view.panel_info, self.view.selected_category_id),
-            ephemeral=True
+            ephemeral=True  # Assurez-vous que cela soit éphémère ou non selon vos besoins
         )
 
 class PanelCategorySelectView(View):
@@ -1886,7 +1888,6 @@ class PanelCategorySelectView(View):
 
 class PanelRoleSelect(Select):
     def __init__(self, guild: discord.Guild):
-        # Récupérer tous les rôles disponibles dynamiquement
         options = [
             SelectOption(label=role.name, value=str(role.id))
             for role in guild.roles if not role.is_default()
@@ -2122,7 +2123,6 @@ async def setup_persistent_views():
                     except Exception as e:
                         print(f"Error adding persistent ticket view: {e}")
                     break
-
 # --------- REMOVE THE BOT FROM SERVER---------
 def is_creator():
     async def predicate(ctx):
