@@ -7,8 +7,9 @@ import json
 import os
 from dotenv import load_dotenv
 import re
+import random
 import asyncio
-import datetime 
+import datetime
 from datetime import timedelta
 
 load_dotenv()
@@ -20,9 +21,25 @@ bot.remove_command('help')
 
 BAD_WORDS = ["nigger", "jobless", "kys"]
 LINK_THRESHOLD = 3  # Number of allowed link messages before timeout
-TIMEOUT_DURATION = 600  # Timeout duration in seconds (10 minutes)
+TIMEOUT_DURATION = 600 
 DATA_FOLDER = "guild_data"
+WELCOME_MESSAGES = [
+    "🎉 Welcome to the server, {member}! We're glad to have you here!",
+    "👋 Hey {member}, welcome aboard! Enjoy your stay!",
+    "🌟 Welcome, {member}! Feel free to introduce yourself!",
+    "🚀 Hi {member}! We're excited to have you join us!",
+    "🎈 Welcome to the family, {member}! Let's have some fun!"
+]
+LEAVE_MESSAGES = [
+    "😢 Goodbye, {member}! We'll miss you!",
+    "👋 Farewell, {member}! Come back soon!",
+    "🚪 {member} has left the server. Safe travels!",
+    "💔 We're sad to see you go, {member}. Take care!",
+    "🌈 Goodbye, {member}! Wishing you all the best!"
+]
+
 link_message_counts = defaultdict(int)
+
 
 if not os.path.exists(DATA_FOLDER):
     os.makedirs(DATA_FOLDER)
@@ -41,6 +58,7 @@ def load_guild_data(guild_id, key, default):
         except Exception:
             return default
     return default
+
 
 def get_deleted_logs_file(guild_id):
     return os.path.join(DATA_FOLDER, f"{guild_id}_deleted_logs.json")
@@ -79,6 +97,7 @@ def save_guild_data(guild_id, key, data):
     path = get_guild_file(guild_id, key)
     with open(path, "w") as f:
         json.dump(data, f)
+
 
 def get_permissions_roles(guild_id):
     return load_guild_data(guild_id, "permissions", {"perm1": [], "perm2": [], "perm3": []})
@@ -277,6 +296,14 @@ async def on_ready():
         shadowrealm_timer.start()
         print("Shadowrealm timer started.")
 
+@bot.event
+async def on_guild_join(guild):
+    # Ajoute automatiquement l'owner du serveur à la liste des owners
+    owners = get_owners(guild.id)
+    if guild.owner.id not in owners:
+        owners.add(guild.owner.id)
+        save_owners(guild.id, owners)
+        print(f"Owner {guild.owner} added to the owners list for guild {guild.name}.")
 
 @bot.event
 async def on_message(message):
@@ -302,7 +329,7 @@ async def on_message(message):
             return
 
     # Check for links and allowed roles
-    allowed_roles = [123456789012345678, 234567890123456789]  # Replace with actual role IDs
+    allowed_roles = [1408234280991326289, 1408234280274100294,1408234273026080920,1408197318825738301]  # Replace with actual role IDs
     has_allowed_role = any(role.id in allowed_roles for role in message.author.roles)
 
     if not has_allowed_role and ("http://" in message.content or "https://" in message.content):
@@ -437,6 +464,14 @@ async def on_member_join(member):
             except Exception as e:
                 print(f"An unexpected error occurred while assigning role: {e}")
 
+        # Send welcome message
+        channel_id = load_guild_data(member.guild.id, "welcome_channel", None)
+        if channel_id:
+            channel = bot.get_channel(channel_id)
+            if channel:
+                welcome_message = random.choice(WELCOME_MESSAGES).format(member=member.mention)
+                embed = discord.Embed(title="New Member!", description=welcome_message, color=discord.Color.green())
+                await channel.send(embed=embed)
 
 # ----------- LOG MANUAL ROLE ADD/REMOVE -----------
 
@@ -539,8 +574,7 @@ async def on_member_ban(guild, user):
 
 @bot.event
 async def on_member_remove(member):
-    # This event triggers for both kick and voluntary leave; can't distinguish between them directly
-    # Optionally, you can log every leave/kick here
+    # Log the leaving member
     logs_channel_id = get_logs_channel_id(member.guild.id)
     if not logs_channel_id:
         return
@@ -557,6 +591,15 @@ async def on_member_remove(member):
     embed.set_footer(text=f"Server: {member.guild.name} | ID: {member.guild.id}")
     await logs_channel.send(embed=embed)
 
+    # Send leave message to the welcome channel
+    welcome_channel_id = load_guild_data(member.guild.id, "welcome_channel", None)
+    if welcome_channel_id:
+        channel = bot.get_channel(welcome_channel_id)
+        if channel:
+            leave_message = random.choice(LEAVE_MESSAGES).format(member=member.mention)
+            embed = discord.Embed(title="Member Left", description=leave_message, color=discord.Color.red())
+            await channel.send(embed=embed)
+
 @bot.event
 async def on_command_error(ctx, error):
     if isinstance(error, commands.MissingPermissions):
@@ -570,6 +613,9 @@ async def on_command_error(ctx, error):
 
 
 # ----------- LOGS MOD COMMAND -----------
+
+
+
 
 @bot.command(name="logs_mod")
 @commands.has_permissions(administrator=True)
@@ -610,6 +656,23 @@ async def logs_mod_slash(interaction: discord.Interaction, channel: discord.Text
         color=discord.Color.green(),
         author=interaction.user
     )
+
+@bot.tree.command(name="welcome_channel")
+@app_commands.describe(channel="The channel for welcome/leave messages")
+@commands.has_permissions(administrator=True)
+async def set_welcome_channel(interaction: discord.Interaction, channel: discord.TextChannel):
+    save_guild_data(interaction.guild.id, "welcome_channel", channel.id)
+    await interaction.response.send_message(f"📢 Welcome/leave messages will be sent to {channel.mention}.", ephemeral=True)
+
+# Command Functions
+@bot.command(name="welcome_channel")
+@commands.has_permissions(administrator=True)
+async def set_welcome_channel(ctx, channel: discord.TextChannel):
+    save_guild_data(ctx.guild.id, "welcome_channel", channel.id)
+    await ctx.send(f"📢 Welcome/leave messages will be sent to {channel.mention}.")
+
+
+
 
 # ----------- BAN, KICK, TIMEOUT, UNTIMEOUT -----------
 @bot.command(name="ban")
@@ -1864,19 +1927,16 @@ class PanelCategorySelect(Select):
             placeholder="Select the category where tickets will be created...",
             min_values=1, max_values=1, options=options
         )
-
     async def callback(self, interaction: discord.Interaction):
         self.view.selected_category_id = int(self.values[0])
         await interaction.response.send_message(
             f"Selected category: <#{self.values[0]}>. Now select staff roles.",
             ephemeral=True
         )
-        
-        # Envoyer un message pour sélectionner les rôles
         await interaction.followup.send(
             "Select staff roles allowed to view tickets:",
             view=PanelRoleSelectView(interaction.guild, self.view.panel_info, self.view.selected_category_id),
-            ephemeral=True  # Assurez-vous que cela soit éphémère ou non selon vos besoins
+            ephemeral=True
         )
 
 class PanelCategorySelectView(View):
@@ -1891,14 +1951,10 @@ class PanelRoleSelect(Select):
         options = [
             SelectOption(label=role.name, value=str(role.id))
             for role in guild.roles if not role.is_default()
-        ]
+        ][:25]
         super().__init__(
-            placeholder="Select staff roles...", 
-            min_values=1, 
-            max_values=len(options) or 1,  # Assurez-vous qu'il y a au moins un rôle
-            options=options
+            placeholder="Select staff roles...", min_values=1, max_values=len(options), options=options
         )
-
     async def callback(self, interaction: discord.Interaction):
         self.view.selected_role_ids = [int(v) for v in self.values]
         await interaction.response.send_message(
@@ -1915,7 +1971,7 @@ class PanelRoleSelect(Select):
 class PanelRoleSelectView(View):
     def __init__(self, guild: discord.Guild, panel_info: dict, selected_category_id: int):
         super().__init__(timeout=120)
-        self.add_item(PanelRoleSelect(guild))  # Instancier avec le guild actuel
+        self.add_item(PanelRoleSelect(guild))
         self.panel_info = panel_info
         self.selected_category_id = selected_category_id
         self.selected_role_ids = []
@@ -1929,7 +1985,6 @@ class PanelTargetChannelSelect(Select):
         super().__init__(
             placeholder="Select the channel for the ticket panel...", min_values=1, max_values=1, options=options
         )
-
     async def callback(self, interaction: discord.Interaction):
         self.view.target_channel_id = int(self.values[0])
         panel_info = self.view.panel_info
@@ -2123,6 +2178,8 @@ async def setup_persistent_views():
                     except Exception as e:
                         print(f"Error adding persistent ticket view: {e}")
                     break
+
+
 # --------- REMOVE THE BOT FROM SERVER---------
 def is_creator():
     async def predicate(ctx):
