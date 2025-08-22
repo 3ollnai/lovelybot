@@ -1864,6 +1864,7 @@ class PanelCategorySelect(Select):
             placeholder="Select the category where tickets will be created...",
             min_values=1, max_values=1, options=options
         )
+
     async def callback(self, interaction: discord.Interaction):
         self.view.selected_category_id = int(self.values[0])
         await interaction.response.send_message(
@@ -1885,40 +1886,38 @@ class PanelCategorySelectView(View):
 
 class PanelRoleSelect(Select):
     def __init__(self, guild: discord.Guild):
+        # Récupérer tous les rôles disponibles dynamiquement
         options = [
             SelectOption(label=role.name, value=str(role.id))
             for role in guild.roles if not role.is_default()
         ]
-        
-        # Si vous souhaitez permettre la sélection de plusieurs rôles, vous pouvez ajuster max_values
         super().__init__(
-            placeholder="Select staff roles...",
-            min_values=1,
-            max_values=len(options),  # Permettre la sélection de tous les rôles
+            placeholder="Select staff roles...", 
+            min_values=1, 
+            max_values=len(options) or 1,  # Assurez-vous qu'il y a au moins un rôle
             options=options
         )
 
-async def callback(self, interaction: discord.Interaction):
-    self.view.selected_role_ids = [int(v) for v in self.values]  # Récupérer les IDs des rôles sélectionnés
-    await interaction.response.send_message(
-        "Where should the panel be posted? Select the text channel.",
-        ephemeral=True,
-        view=PanelTargetChannelSelectView(
-            interaction.guild,
-            self.view.panel_info,
-            self.view.selected_category_id,
-            self.view.selected_role_ids  # Passer les rôles sélectionnés
+    async def callback(self, interaction: discord.Interaction):
+        self.view.selected_role_ids = [int(v) for v in self.values]
+        await interaction.response.send_message(
+            "Where should the panel be posted? Select the text channel.",
+            ephemeral=True,
+            view=PanelTargetChannelSelectView(
+                interaction.guild,
+                self.view.panel_info,
+                self.view.selected_category_id,
+                self.view.selected_role_ids
+            )
         )
-    )
 
 class PanelRoleSelectView(View):
     def __init__(self, guild: discord.Guild, panel_info: dict, selected_category_id: int):
         super().__init__(timeout=120)
-        self.add_item(PanelRoleSelect(guild))
+        self.add_item(PanelRoleSelect(guild))  # Instancier avec le guild actuel
         self.panel_info = panel_info
         self.selected_category_id = selected_category_id
-        self.selected_role_ids = []  # Initialiser la liste des rôles sélectionnés
-
+        self.selected_role_ids = []
 
 class PanelTargetChannelSelect(Select):
     def __init__(self, guild: discord.Guild):
@@ -1929,6 +1928,7 @@ class PanelTargetChannelSelect(Select):
         super().__init__(
             placeholder="Select the channel for the ticket panel...", min_values=1, max_values=1, options=options
         )
+
     async def callback(self, interaction: discord.Interaction):
         self.view.target_channel_id = int(self.values[0])
         panel_info = self.view.panel_info
@@ -2122,7 +2122,6 @@ async def setup_persistent_views():
                     except Exception as e:
                         print(f"Error adding persistent ticket view: {e}")
                     break
-
 
 # --------- REMOVE THE BOT FROM SERVER---------
 def is_creator():
