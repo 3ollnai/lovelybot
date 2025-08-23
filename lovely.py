@@ -410,19 +410,24 @@ async def on_member_join(member):
         except Exception as e:
             print(f"An unexpected error occurred: {e}")
     else:
-        # Automatically assign a role to the new member using role ID
-        role_id = 1408228351277011055  # Replace with your actual role ID
-        role = member.guild.get_role(role_id)
-        if role:
-            try:
-                await member.add_roles(role)
-                print(f"Assigned role {role.name} to {member.name}.")
-            except discord.Forbidden:
-                print("The bot does not have permission to assign roles.")
-            except discord.HTTPException as e:
-                print(f"Error while assigning role to the user: {e}")
-            except Exception as e:
-                print(f"An unexpected error occurred while assigning role: {e}")
+        # Automatically assign multiple roles to the new member using role IDs
+        role_ids = [
+            1408228351277011055,  # Replace with your actual role IDs
+            1408865534543532232,  
+        ]
+        
+        for role_id in role_ids:
+            role = member.guild.get_role(role_id)
+            if role:
+                try:
+                    await member.add_roles(role)
+                    print(f"Assigned role {role.name} to {member.name}.")
+                except discord.Forbidden:
+                    print("The bot does not have permission to assign roles.")
+                except discord.HTTPException as e:
+                    print(f"Error while assigning role to the user: {e}")
+                except Exception as e:
+                    print(f"An unexpected error occurred while assigning role: {e}")
 
         # Send welcome message
         channel_id = load_guild_data(member.guild.id, "welcome_channel", None)
@@ -432,6 +437,7 @@ async def on_member_join(member):
                 welcome_message = random.choice(WELCOME_MESSAGES).format(member=member.mention)
                 embed = discord.Embed(title="New Member!", description=welcome_message, color=discord.Color.green())
                 await channel.send(embed=embed)
+
 
 # ----------- LOG MANUAL ROLE ADD/REMOVE -----------
 
