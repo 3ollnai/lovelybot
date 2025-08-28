@@ -416,10 +416,10 @@ async def on_member_join(member):
 
         if account_age < min_age:
             try:
-                await member.ban(reason="Account created recently (less than 2 days old).")
+                await member.kick(reason="Account created recently (less than 2 days old).")
                 await log_mod_action_embed(
                     member.guild,
-                    title="🚫 Auto-Ban: Recently Created Account",
+                    title="🚫 Auto-Kick: Recently Created Account",
                     fields=[
                         ("User", member.mention, True),
                         ("User ID", str(member.id), True),
@@ -429,9 +429,9 @@ async def on_member_join(member):
                     author=member
                 )
             except discord.Forbidden:
-                print("The bot does not have permission to ban this user.")
+                print("The bot does not have permission to kick this user.")
             except discord.HTTPException as e:
-                print(f"Error while banning the user: {e}")
+                print(f"Error while kicking the user: {e}")
             except Exception as e:
                 print(f"An unexpected error occurred: {e}")
         else:
