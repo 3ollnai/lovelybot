@@ -410,34 +410,58 @@ async def on_member_join(member):
         except Exception as e:
             print(f"An unexpected error occurred: {e}")
     else:
-        # Automatically assign multiple roles to the new member using role IDs
-        role_ids = [
-            1408228351277011055,  # Replace with your actual role IDs
-            1408865534543532232,  
-        ]
-        
-        for role_id in role_ids:
-            role = member.guild.get_role(role_id)
-            if role:
-                try:
-                    await member.add_roles(role)
-                    print(f"Assigned role {role.name} to {member.name}.")
-                except discord.Forbidden:
-                    print("The bot does not have permission to assign roles.")
-                except discord.HTTPException as e:
-                    print(f"Error while assigning role to the user: {e}")
-                except Exception as e:
-                    print(f"An unexpected error occurred while assigning role: {e}")
+        # Check account age
+        account_age = datetime.utcnow() - member.created_at
+        min_age = timedelta(days=2)  # 2 days of age
 
-        # Send welcome message
-        channel_id = load_guild_data(member.guild.id, "welcome_channel", None)
-        if channel_id:
-            channel = bot.get_channel(channel_id)
-            if channel:
-                welcome_message = random.choice(WELCOME_MESSAGES).format(member=member.mention)
-                embed = discord.Embed(title="New Member!", description=welcome_message, color=discord.Color.green())
-                await channel.send(embed=embed)
+        if account_age < min_age:
+            try:
+                await member.ban(reason="Account created recently (less than 2 days old).")
+                await log_mod_action_embed(
+                    member.guild,
+                    title="🚫 Auto-Ban: Recently Created Account",
+                    fields=[
+                        ("User", member.mention, True),
+                        ("User ID", str(member.id), True),
+                        ("Reason", "Account created recently (less than 2 days old).", False)
+                    ],
+                    color=discord.Color.red(),
+                    author=member
+                )
+            except discord.Forbidden:
+                print("The bot does not have permission to ban this user.")
+            except discord.HTTPException as e:
+                print(f"Error while banning the user: {e}")
+            except Exception as e:
+                print(f"An unexpected error occurred: {e}")
+        else:
+            # Automatically assign multiple roles to the new member using role IDs
+            role_ids = [
+                1408228351277011055,  # Remplacez par vos véritables IDs de rôle
+                1408865534543532232,
+            ]
+            
+            for role_id in role_ids:
+                role = member.guild.get_role(role_id)
+                if role:
+                    try:
+                        await member.add_roles(role)
+                        print(f"Assigned role {role.name} to {member.name}.")
+                    except discord.Forbidden:
+                        print("The bot does not have permission to assign roles.")
+                    except discord.HTTPException as e:
+                        print(f"Error while assigning role to the user: {e}")
+                    except Exception as e:
+                        print(f"An unexpected error occurred while assigning role: {e}")
 
+            # Send welcome message
+            channel_id = load_guild_data(member.guild.id, "welcome_channel", None)
+            if channel_id:
+                channel = bot.get_channel(channel_id)
+                if channel:
+                    welcome_message = random.choice(WELCOME_MESSAGES).format(member=member.mention)
+                    embed = discord.Embed(title="New Member!", description=welcome_message, color=discord.Color.green())
+                    await channel.send(embed=embed)
 
 # ----------- LOG MANUAL ROLE ADD/REMOVE -----------
 
