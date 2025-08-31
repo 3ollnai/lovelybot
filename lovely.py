@@ -1727,8 +1727,12 @@ async def resolve_member(ctx, arg):
     return None
 
 @bot.command(name="shadowrealm")
-@commands.has_permissions(manage_roles=True)
 async def shadowrealm(ctx, user: str, duration: str):
+    # Check if the user has perm3 or is the owner
+    if not (has_perm(ctx, "perm3") or is_owner(ctx)):
+        await ctx.send("You do not have permission to use this command.", delete_after=5)
+        return
+
     member = await resolve_member(ctx, user)
     if not member:
         await ctx.send("User not found. Please mention, provide their ID, username, or server nickname.")
@@ -1751,9 +1755,9 @@ async def shadowrealm(ctx, user: str, duration: str):
         await ctx.guild.edit_role_positions({role: bot_role.position - 1})
         await ctx.send(f"The {role_name} role did not exist and has been created.")
 
-    # Enlever tous les rôles de l'utilisateur
-    old_roles = member.roles[1:]  # Ignorer le rôle @everyone
-    await member.edit(roles=[role])  # Ne garder que le rôle SHADOW REALM
+    # Remove all roles from the user
+    old_roles = member.roles[1:]  # Ignore the @everyone role
+    await member.edit(roles=[role])  # Keep only the SHADOW REALM role
 
     for channel in ctx.guild.channels:
         overwrites = channel.overwrites_for(role)
@@ -1768,9 +1772,10 @@ async def shadowrealm(ctx, user: str, duration: str):
 
     await asyncio.sleep(seconds)
 
-    # Remettre les anciens rôles
-    await member.edit(roles=old_roles)  # Remettre tous les anciens rôles
+    # Restore the old roles
+    await member.edit(roles=old_roles)  # Restore all old roles
     await ctx.send(f"{member.mention} has returned from the shadow realm!")
+
 
 @tasks.loop(seconds=1)
 async def shadowrealm_timer():
