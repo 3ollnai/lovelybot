@@ -1751,6 +1751,10 @@ async def shadowrealm(ctx, user: str, duration: str):
         await ctx.guild.edit_role_positions({role: bot_role.position - 1})
         await ctx.send(f"The {role_name} role did not exist and has been created.")
 
+    # Enlever tous les rôles de l'utilisateur
+    old_roles = member.roles[1:]  # Ignorer le rôle @everyone
+    await member.edit(roles=[role])  # Ne garder que le rôle SHADOW REALM
+
     for channel in ctx.guild.channels:
         overwrites = channel.overwrites_for(role)
         overwrites.view_channel = False
@@ -1763,7 +1767,9 @@ async def shadowrealm(ctx, user: str, duration: str):
     await ctx.send(f"{member.mention} has been sent to the shadow realm for {duration}.")
 
     await asyncio.sleep(seconds)
-    await member.remove_roles(role)
+
+    # Remettre les anciens rôles
+    await member.edit(roles=old_roles)  # Remettre tous les anciens rôles
     await ctx.send(f"{member.mention} has returned from the shadow realm!")
 
 @tasks.loop(seconds=1)
