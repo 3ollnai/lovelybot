@@ -1751,13 +1751,17 @@ async def shadowrealm(ctx, user: str, duration: str):
         await ctx.guild.edit_role_positions({role: bot_role.position - 1})
         await ctx.send(f"The {role_name} role did not exist and has been created.")
 
-    for channel in ctx.guild.channels:
+    # Mettre à jour les permissions des canaux en parallèle
+    async def update_channel_permissions(channel):
         overwrites = channel.overwrites_for(role)
         overwrites.view_channel = False
         try:
             await channel.set_permissions(role, overwrite=overwrites)
         except Exception as e:
             print(f"Error updating {channel.name}: {e}")
+
+    # Lancer la mise à jour des permissions en parallèle
+    await asyncio.gather(*(update_channel_permissions(channel) for channel in ctx.guild.channels))
 
     await member.add_roles(role)
     await ctx.send(f"{member.mention} has been sent to the shadow realm for {duration}.")
