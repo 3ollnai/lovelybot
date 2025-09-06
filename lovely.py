@@ -2070,9 +2070,13 @@ class TicketCloseView(View):
         opener = interaction.user
         guild = channel.guild
 
-        # Vérifiez si l'interaction est valide
         if channel is None or opener is None:
             await interaction.response.send_message("This ticket cannot be closed.", ephemeral=True)
+            return
+
+        # Vérifiez si le bot a les permissions nécessaires
+        if not channel.permissions_for(guild.me).manage_channels:
+            await interaction.response.send_message("I do not have permission to manage this channel.", ephemeral=True)
             return
 
         try:
@@ -2091,6 +2095,7 @@ class TicketCloseView(View):
         except Exception as e:
             print(f"Error closing ticket: {e}")
             await interaction.response.send_message("An error occurred while trying to close the ticket.", ephemeral=True)
+
 
 class TicketPanelSetupView(View):
     def __init__(self, ctx):
@@ -2149,7 +2154,9 @@ async def setup_persistent_views():
                     try:
                         # Réajouter la vue ici
                         view = UserTicketPanelView(panel)
-                        bot.add_view(view, message_id=message.id)  # Assurez-vous que cela fonctionne correctement
+                        # Assurez-vous que la vue est ajoutée au bot
+                        bot.add_view(view)
+                        await message.edit(view=view)  # Réajoutez la vue au message
                         print(f"Persistent view re-added in {channel} for panel {panel['name']}")
                     except Exception as e:
                         print(f"Error adding persistent ticket view: {e}")
