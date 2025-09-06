@@ -2064,11 +2064,16 @@ class TicketCloseView(View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="Close Ticket", style=discord.ButtonStyle.red, emoji="🔒")
+    @discord.ui.button(label="Close Ticket", style=discord.ButtonStyle.red, emoji="🔒", custom_id="close_ticket_btn")
     async def close_ticket(self, interaction: discord.Interaction, button: Button):
         channel = interaction.channel
         opener = interaction.user
         guild = channel.guild
+
+        # Vérifiez si l'interaction est valide
+        if channel is None or opener is None:
+            await interaction.response.send_message("This ticket cannot be closed.", ephemeral=True)
+            return
 
         try:
             await log_mod_action_embed(
@@ -2141,14 +2146,15 @@ async def setup_persistent_views():
                     and message.embeds[0].title == f"🎟️ {panel['name']}"
                     and message.embeds[0].description == panel['description']
                 ):
-                    # Réajouter la vue ici
                     try:
+                        # Réajouter la vue ici
                         view = UserTicketPanelView(panel)
                         bot.add_view(view, message_id=message.id)  # Assurez-vous que cela fonctionne correctement
                         print(f"Persistent view re-added in {channel} for panel {panel['name']}")
                     except Exception as e:
                         print(f"Error adding persistent ticket view: {e}")
                     break
+
 
 
 # --------- REMOVE THE BOT FROM SERVER---------
