@@ -1727,17 +1727,8 @@ async def resolve_member(ctx, arg):
     return None
 
 @bot.command(name="shadowrealm")
+@commands.has_permissions(manage_roles=True)
 async def shadowrealm(ctx, user: str, duration: str):
-    # Check if the user has perm3 or is the owner
-    if not (has_perm(ctx, "perm3") or is_owner(ctx)):
-        await ctx.send("You do not have permission to use this command.", delete_after=5)
-        return
-
-    # Check if the bot has the necessary permissions
-    if not ctx.guild.me.guild_permissions.manage_roles:
-        await ctx.send("I do not have permission to manage roles.", delete_after=5)
-        return
-
     member = await resolve_member(ctx, user)
     if not member:
         await ctx.send("User not found. Please mention, provide their ID, username, or server nickname.")
@@ -1752,23 +1743,13 @@ async def shadowrealm(ctx, user: str, duration: str):
     role = discord.utils.get(ctx.guild.roles, name=role_name)
 
     if not role:
-        try:
-            role = await ctx.guild.create_role(
-                name=role_name,
-                reason="Role automatically created for the shadowrealm command"
-            )
-            await ctx.send(f"The {role_name} role did not exist and has been created.")
-        except discord.Forbidden:
-            await ctx.send("I do not have permission to create roles.", delete_after=5)
-            return
-
-    # Remove all roles from the user
-    old_roles = member.roles[1:]  # Ignore the @everyone role
-    try:
-        await member.edit(roles=[role])  # Keep only the SHADOW REALM role
-    except discord.Forbidden:
-        await ctx.send("I do not have permission to assign roles to this user.", delete_after=5)
-        return
+        bot_role = ctx.guild.me.top_role
+        role = await ctx.guild.create_role(
+            name=role_name,
+            reason="Role automatically created for the shadowrealm command"
+        )
+        await ctx.guild.edit_role_positions({role: bot_role.position - 1})
+        await ctx.send(f"The {role_name} role did not exist and has been created.")
 
     for channel in ctx.guild.channels:
         overwrites = channel.overwrites_for(role)
@@ -1782,9 +1763,7 @@ async def shadowrealm(ctx, user: str, duration: str):
     await ctx.send(f"{member.mention} has been sent to the shadow realm for {duration}.")
 
     await asyncio.sleep(seconds)
-
-    # Restore the old roles
-    await member.edit(roles=old_roles)  # Restore all old roles
+    await member.remove_roles(role)
     await ctx.send(f"{member.mention} has returned from the shadow realm!")
 
 
