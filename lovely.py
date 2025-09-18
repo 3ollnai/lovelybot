@@ -1567,10 +1567,12 @@ async def custom_command(ctx, command_name: str, *, command_content: str):
         await ctx.send("Only owners can create custom commands.", delete_after=5)
         await ctx.message.delete()
         return
+    
     if command_name in ["help", "commands"]:
-        await ctx.send("Available commands: help, commands, custom, say")
+        await ctx.send("Available commands: help, commands, custom, say", delete_after=5)
         await ctx.message.delete()
         return
+    
     commands_data = load_guild_data(ctx.guild.id, "custom_commands", {})
     commands_data[command_name] = command_content
     save_guild_data(ctx.guild.id, "custom_commands", commands_data)
@@ -1579,16 +1581,29 @@ async def custom_command(ctx, command_name: str, *, command_content: str):
 
 @bot.command(name="customlist")
 async def custom_list(ctx):
+    # Only owners can view the list of custom commands
+    if not is_owner(ctx):
+        await ctx.send("Only owners can view the list of custom commands.", delete_after=5)
+        await ctx.message.delete()
+        return
+
     commands_data = load_guild_data(ctx.guild.id, "custom_commands", {})
     embed = discord.Embed(
         title="Custom Commands",
         description="List of custom commands:",
         color=discord.Color.blue()
     )
-    for name in commands_data.keys():
-        embed.add_field(name=name, value="\u200b", inline=False)  
+    
+    if not commands_data:
+        embed.description = "There are no custom commands created."
+    else:
+        for name in commands_data.keys():
+            embed.add_field(name=name, value="\u200b", inline=False)
+    
     await ctx.send(embed=embed)
     await ctx.message.delete()
+
+
 
 # ----------- INFOS -----------
 
@@ -1810,8 +1825,8 @@ async def help_command(ctx):
     moderation_cmds = []
     management_cmds = []
     info_cmds = ["userinfo", "serverinfo", "avatar"]
-    logs_cmds = ["logs_mod"]
-    ticket_cmds = ["ticketpanel"]
+    logs_cmds = []
+    ticket_cmds = []
     custom_cmds = []
 
     # Automatiquement ajouter le propriétaire du serveur à la liste des propriétaires
@@ -1831,6 +1846,8 @@ async def help_command(ctx):
     # GESTION
     if is_owner(ctx):
         management_cmds += ["blacklist", "unblacklist", "showbl", "addowner", "delowner", "addperm", "delperm", "createpermission"]
+        logs_cmds += ["logs_mod"]  # Accessible uniquement par les propriétaires
+        ticket_cmds += ["ticketpanel"]  # Accessible uniquement par les propriétaires
 
     # COMMANDES PERSONNALISÉES
     commands_data = load_guild_data(ctx.guild.id, "custom_commands", {})
@@ -1856,6 +1873,7 @@ async def help_command(ctx):
 
     embed.set_footer(text="Slash commands also available!")
     await ctx.send(embed=embed)
+
 
 # ----------- TICKET SYSTEM (guild_data) -----------
 
